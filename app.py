@@ -44,6 +44,12 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                 for img in soup.find_all("img"):
                     src = img.get("src")
 
+                    # Fallback: use srcset if src is not present
+                    if not src:
+                        srcset = img.get("srcset", "")
+                        if srcset:
+                            src = srcset.split(",")[0].split()[0]  # get the first URL from srcset
+
                     # Handle proxied images (e.g. Next.js format)
                     if src and "/_next/image?" in src and "url=" in src:
                         parsed = urlparse(src)
@@ -118,9 +124,3 @@ def index():
                         upload_to_dropbox(img_path, dropbox_img_path)
 
                 upload_to_dropbox(csv_path, f"{dropbox_folder}/image_metadata.csv")
-                message = "Upload to Dropbox completed!"
-
-    return render_template("index.html", message=message)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
