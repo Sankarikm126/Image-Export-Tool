@@ -1,0 +1,13 @@
+# .gitignore
+.env
+__pycache__/
+*.pyc
+*.zip
+*.log
+*.DS_Store
+*.db
+*.sqlite3
+.idea/
+.vscode/
+*.iml
+AppData/
