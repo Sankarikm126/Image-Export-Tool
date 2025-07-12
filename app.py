@@ -11,11 +11,6 @@ load_dotenv()
 app = Flask(__name__)
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
 
-SKIP_KEYWORDS = [
-    "logo", "icon", "avatar", "author", "profile", "signature", "favicon",
-    "bio", "team", "headshot", "user", "staff", "linkedin", "twitter", "instagram", "fb", "social"
-]
-
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
     parsed_base = urlparse(base_url)
@@ -43,15 +38,8 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
                 for img in soup.find_all("img"):
                     src = img.get("src")
-
-                    # Fallback: use srcset if src is not present
-                    if not src:
-                        srcset = img.get("srcset", "")
-                        if srcset:
-                            src = srcset.split(",")[0].split()[0]  # get the first URL from srcset
-
-                    # Handle proxied images (e.g. Next.js format)
-                    if src and "/_next/image?" in src and "url=" in src:
+                    # Handle proxied images (e.g. Next.js)
+                    if src and "/_next/image" in src and "url=" in src:
                         parsed = urlparse(src)
                         query = parse_qs(parsed.query)
                         if "url" in query:
@@ -61,8 +49,6 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
-                        if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
-                            continue
 
                         image_path = os.path.join(output_dir, image_name)
                         downloaded = "No"
