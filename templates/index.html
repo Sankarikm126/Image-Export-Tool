@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Export to Dropbox</title>
+</head>
+<body>
+    <h2>Extract Images from Site and Upload to Dropbox</h2>
+    <form method="post">
+        <label>Parent Page URL:</label><br>
+        <input type="text" name="url" style="width: 400px;" required><br><br>
+
+        <label>Dropbox Folder Path (e.g., /CIE IGCSE Physics):</label><br>
+        <input type="text" name="dropbox_folder" style="width: 400px;" required><br><br>
+
+        <input type="submit" value="Start Extraction and Upload">
+    </form>
+    {% if message %}
+        <p><strong>{{ message }}</strong></p>
+    {% endif %}
+</body>
+</html>
