@@ -124,3 +124,9 @@ def index():
                         upload_to_dropbox(img_path, dropbox_img_path)
 
                 upload_to_dropbox(csv_path, f"{dropbox_folder}/image_metadata.csv")
+                message = "Upload to Dropbox completed!"
+
+    return render_template("index.html", message=message)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
