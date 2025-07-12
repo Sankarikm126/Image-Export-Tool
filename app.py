@@ -7,6 +7,7 @@ import dropbox
 from dotenv import load_dotenv
 
 load_dotenv()
+
 app = Flask(__name__)
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
 
@@ -43,7 +44,7 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                 for img in soup.find_all("img"):
                     src = img.get("src")
 
-                    # Handle proxied images (e.g., Next.js)
+                    # Handle proxied images (e.g. Next.js format)
                     if src and "/_next/image?" in src and "url=" in src:
                         parsed = urlparse(src)
                         query = parse_qs(parsed.query)
