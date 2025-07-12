@@ -41,34 +41,42 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                 res = requests.get(url)
                 soup = BeautifulSoup(res.text, "html.parser")
 
-                for img in soup.find_all("img"):
-                    src = img.get("src")
-                    alt = img.get("alt", "")
-                    if src:
-                        full_img_url = urljoin(url, src)
-                        image_name = os.path.basename(full_img_url.split("?")[0])
-                        if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
-                            continue
+               for img in soup.find_all("img"):
+    src = img.get("src")
+    # Handle proxied images (e.g. Next.js)
+    if src and "/_next/image?" in src and "url=" in src:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(src)
+        query = parse_qs(parsed.query)
+        if "url" in query:
+            src = query["url"][0]
 
-                        image_path = os.path.join(output_dir, image_name)
-                        downloaded = "No"
-                        try:
-                            img_data = requests.get(full_img_url).content
-                            with open(image_path, 'wb') as f:
-                                f.write(img_data)
-                            downloaded = "Yes"
-                            image_urls.add((full_img_url, image_name))
-                        except Exception as e:
-                            print(f"Error downloading {full_img_url}: {e}")
+    alt = img.get("alt", "")
+    if src:
+        full_img_url = urljoin(url, src)
+        image_name = os.path.basename(full_img_url.split("?")[0])
+        if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
+            continue
 
-                        writer.writerow({
-                            "page_url": url,
-                            "image_url": full_img_url,
-                            "image_name": image_name,
-                            "alt_text_present": "Yes" if alt else "No",
-                            "alt_text": alt,
-                            "downloaded": downloaded
-                        })
+        image_path = os.path.join(output_dir, image_name)
+        downloaded = "No"
+        try:
+            img_data = requests.get(full_img_url).content
+            with open(image_path, 'wb') as f:
+                f.write(img_data)
+            downloaded = "Yes"
+            image_urls.add((full_img_url, image_name))
+        except Exception as e:
+            print(f"Error downloading {full_img_url}: {e}")
+
+        writer.writerow({
+            "page_url": url,
+            "image_url": full_img_url,
+            "image_name": image_name,
+            "alt_text_present": "Yes" if alt else "No",
+            "alt_text": alt,
+            "downloaded": downloaded
+        })
 
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a['href'])
