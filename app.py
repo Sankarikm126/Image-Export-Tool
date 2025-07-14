@@ -81,10 +81,13 @@ def crawl_and_extract(base_url, output_dir, csv_path):
     return image_urls
 
 def upload_to_dropbox(local_path, dropbox_path):
+    shared_base = "/SME"  # top-level shared folder
+    full_path = os.path.join(shared_base, dropbox_path.lstrip("/"))
+    
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
     with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-        print(f"Uploaded to Dropbox: {dropbox_path}")
+        dbx.files_upload(f.read(), full_path, mode=dropbox.files.WriteMode.overwrite)
+        print(f"Uploaded to Dropbox: {full_path}")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
