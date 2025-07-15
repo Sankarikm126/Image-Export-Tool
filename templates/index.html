@@ -16,7 +16,7 @@
     </form>
 
     {% if message %}
-        <p><strong>{{ message }}</strong></p>
+        <p><strong>{{ message|safe }}</strong></p>
     {% endif %}
 
     {% if folder_link %}
