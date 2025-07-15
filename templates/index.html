@@ -4,18 +4,28 @@
     <title>Image Export to Dropbox</title>
 </head>
 <body>
-    <h2>Extract Images from Site and Upload to Dropbox</h2>
-    <form method="post">
+    <h2>Extract Images from Site and Upload to Dropbox Shared Folder</h2>
+    <form method="POST">
         <label>Parent Page URL:</label><br>
         <input type="text" name="url" style="width: 400px;" required><br><br>
 
-        <label>Gdrive Folder Path (e.g., /CIE IGCSE Physics):</label><br>
+        <label>Dropbox Subfolder Path (e.g., CIE IGCSE Physics/Revision Notes):</label><br>
         <input type="text" name="course_folder" style="width: 400px;" required><br><br>
 
         <input type="submit" value="Start Extraction and Upload">
     </form>
+
     {% if message %}
         <p><strong>{{ message }}</strong></p>
+    {% endif %}
+
+    {% if links %}
+        <h3>Uploaded File Links:</h3>
+        <ul>
+            {% for link in links %}
+                <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
+            {% endfor %}
+        </ul>
     {% endif %}
 </body>
 </html>
