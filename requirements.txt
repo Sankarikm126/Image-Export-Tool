@@ -1,6 +1,7 @@
 flask
 requests
 beautifulsoup4
-dropbox
+google-api-python-client
+google-auth
 python-dotenv
 gunicorn
