@@ -3,14 +3,21 @@ import os, requests, csv, tempfile
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 from datetime import datetime
-import dropbox
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
-SHARED_ROOT_FOLDER = "/AG9LEPMYf67dlFoSMNixca8"  # Default shared Dropbox folder
+SCOPES = ['https://www.googleapis.com/auth/drive']
+SERVICE_ACCOUNT_FILE = 'credentials.json'
+
+credentials = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+service = build('drive', 'v3', credentials=credentials)
+MY_DRIVE_FOLDER_ID = os.environ.get("MY_DRIVE_FOLDER_ID")  # Target folder in user's My Drive
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
@@ -80,21 +87,30 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
     return image_urls
 
-def upload_to_dropbox(local_path, dropbox_path):
-    dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-        print(f"Uploaded to Dropbox: {dropbox_path}")
+def upload_to_gdrive(local_path, file_name):
+    file_metadata = {
+        'name': file_name,
+        'parents': [MY_DRIVE_FOLDER_ID]
+    }
+    media = MediaFileUpload(local_path, resumable=True)
+    file = service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+    print(f"Uploaded to Google Drive: {file.get('id')}")
+    return file.get('id')
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
+    drive_links = []
     if request.method == "POST":
         parent_url = request.form["url"]
-        course_folder = request.form.get("dropbox_folder", "").strip("/")  # e.g., Physics
+        course_folder = request.form.get("dropbox_folder", "").strip("/")
 
         if not course_folder:
-            message = "Course folder is required to determine shared path."
+            message = "Course folder is required to organize extracted content."
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
                 image_dir = os.path.join(tmpdir, "images")
@@ -105,11 +121,13 @@ def index():
 
                 for _, name in image_data:
                     img_path = os.path.join(image_dir, name)
-                    dropbox_img_path = f"{SHARED_ROOT_FOLDER}/{course_folder}/images/{name}"
                     if os.path.exists(img_path):
-                        upload_to_dropbox(img_path, dropbox_img_path)
+                        file_id = upload_to_gdrive(img_path, name)
+                        drive_links.append(f"https://drive.google.com/file/d/{file_id}/view")
 
-                upload_to_dropbox(csv_path, f"{SHARED_ROOT_FOLDER}/{course_folder}/image_metadata.csv")
-                message = "Upload to shared Dropbox folder completed!"
+                meta_id = upload_to_gdrive(csv_path, "image_metadata.csv")
+                drive_links.append(f"https://drive.google.com/file/d/{meta_id}/view")
 
-    return render_template("index.html", message=message)
+                message = "Upload to My Drive completed!" 
+
+    return render_template("index.html", message=message, links=drive_links)
