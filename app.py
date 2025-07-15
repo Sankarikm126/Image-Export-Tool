@@ -1,19 +1,18 @@
 from flask import Flask, request, render_template
 import os, requests, csv, tempfile
-import dropbox
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 from datetime import datetime
-from dropbox import Dropbox
 from dotenv import load_dotenv
+import dropbox
 
 load_dotenv()
 
 app = Flask(__name__)
-DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")  # Must have edit access to shared folder
-SHARED_FOLDER_PATH = "/SME"  # This is the root of the shared folder
+DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
+SHARED_FOLDER_PATH = os.environ.get("SHARED_FOLDER_PATH")
 
-db = Dropbox(DROPBOX_ACCESS_TOKEN)
+dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
@@ -83,16 +82,21 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
     return image_urls
 
-def upload_to_dropbox(local_path, dropbox_path):
+def upload_to_dropbox(local_path, dropbox_subfolder, file_name):
+    dropbox_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/{file_name}".replace("//", "/")
     with open(local_path, "rb") as f:
-        db.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-        print(f"Uploaded to Dropbox: {dropbox_path}")
+        dbx.files_upload(
+            f.read(),
+            dropbox_path,
+            mode=dropbox.files.WriteMode.overwrite
+        )
+    print(f"Uploaded to Dropbox: {dropbox_path}")
+    return dropbox_path
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
-    dropbox_links = []
-
+    drive_links = []
     if request.method == "POST":
         parent_url = request.form["url"]
         course_folder = request.form.get("course_folder", "").strip("/")
@@ -107,19 +111,15 @@ def index():
 
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path)
 
-                folder_path = f"{SHARED_FOLDER_PATH}/{course_folder}/images"
-
                 for _, name in image_data:
                     img_path = os.path.join(image_dir, name)
                     if os.path.exists(img_path):
-                        dropbox_file_path = f"{folder_path}/{name}"
-                        upload_to_dropbox(img_path, dropbox_file_path)
-                        dropbox_links.append(f"https://www.dropbox.com/home{dropbox_file_path}")
+                        path = upload_to_dropbox(img_path, course_folder, name)
+                        drive_links.append(f"https://www.dropbox.com/home{path}")
 
-                meta_path = f"{SHARED_FOLDER_PATH}/{course_folder}/image_metadata.csv"
-                upload_to_dropbox(csv_path, meta_path)
-                dropbox_links.append(f"https://www.dropbox.com/home{meta_path}")
+                meta_path = upload_to_dropbox(csv_path, course_folder, "image_metadata.csv")
+                drive_links.append(f"https://www.dropbox.com/home{meta_path}")
 
-                message = "Upload to Dropbox SME shared folder completed!"
+                message = "Upload to Shared Dropbox Folder completed!"
 
-    return render_template("index.html", message=message, links=dropbox_links)
+    return render_template("index.html", message=message, links=drive_links)
