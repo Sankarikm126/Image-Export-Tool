@@ -12,7 +12,7 @@ load_dotenv()
 
 app = Flask(__name__)
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = '/etc/secrets/sodium-daylight-466004-h9.json'
+SERVICE_ACCOUNT_FILE = '/etc/secrets/sodium-daylight-466004-h9-f28e62a166ea.json'
 
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES)
