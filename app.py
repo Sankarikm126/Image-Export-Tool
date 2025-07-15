@@ -111,15 +111,16 @@ def index():
 
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path)
 
-                for _, name in image_data:
-                    img_path = os.path.join(image_dir, name)
-                    if os.path.exists(img_path):
-                        path = upload_to_dropbox(img_path, course_folder, name)
-                        drive_links.append(f"https://www.dropbox.com/home{path}")
+               for _, name in image_data:
+    img_path = os.path.join(image_dir, name)
+    if os.path.exists(img_path):
+        upload_to_dropbox(img_path, f"{dropbox_path}/{name}")
 
-                meta_path = upload_to_dropbox(csv_path, course_folder, "image_metadata.csv")
-                drive_links.append(f"https://www.dropbox.com/home{meta_path}")
+# Upload the CSV file
+upload_to_dropbox(csv_path, f"{dropbox_path}/image_metadata.csv")
 
-                message = "Upload to Shared Dropbox Folder completed!"
+# ✅ Add this block below the uploads
+downloaded_count = sum(1 for _, name in image_data if os.path.exists(os.path.join(image_dir, name)))
+folder_link = f"https://www.dropbox.com/home{dropbox_path}"
+message = f"Extracted {downloaded_count} images and uploaded to folder: <a href='{folder_link}' target='_blank'>{folder_link}</a>"
 
-    return render_template("index.html", message=message, links=drive_links)
