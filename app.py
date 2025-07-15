@@ -12,7 +12,7 @@ load_dotenv()
 
 app = Flask(__name__)
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'sodium-daylight-466004-h9-3e5e71cf4e5b.json'
+SERVICE_ACCOUNT_FILE = '/etc/secrets/sodium-daylight-466004-h9-3e5e71cf4e5b.json'
 
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -107,7 +107,7 @@ def index():
     drive_links = []
     if request.method == "POST":
         parent_url = request.form["url"]
-        course_folder = request.form.get("dropbox_folder", "").strip("/")
+        course_folder = request.form.get("course_folder", "").strip("/")
 
         if not course_folder:
             message = "Course folder is required to organize extracted content."
