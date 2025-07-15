@@ -96,7 +96,8 @@ def upload_to_gdrive(local_path, file_name):
     file = service.files().create(
         body=file_metadata,
         media_body=media,
-        fields='id'
+        fields='id',
+        supportsAllDrives=True
     ).execute()
     print(f"Uploaded to Google Drive: {file.get('id')}")
     return file.get('id')
