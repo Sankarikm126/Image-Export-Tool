@@ -96,7 +96,6 @@ def upload_to_dropbox(local_path, dropbox_subfolder, file_name):
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
-    drive_links = []
     if request.method == "POST":
         parent_url = request.form["url"]
         course_folder = request.form.get("course_folder", "").strip("/")
@@ -111,15 +110,15 @@ def index():
 
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path)
 
-               for _, name in image_data:
-    img_path = os.path.join(image_dir, name)
-    if os.path.exists(img_path):
-        upload_to_dropbox(img_path, f"{dropbox_path}/{name}")
+                for _, name in image_data:
+                    img_path = os.path.join(image_dir, name)
+                    if os.path.exists(img_path):
+                        upload_to_dropbox(img_path, course_folder, name)
 
-# Upload the CSV file
-upload_to_dropbox(csv_path, f"{dropbox_path}/image_metadata.csv")
+                upload_to_dropbox(csv_path, course_folder, "image_metadata.csv")
 
-# ✅ Add this block below the uploads
-downloaded_count = sum(1 for _, name in image_data if os.path.exists(os.path.join(image_dir, name)))
-folder_link = f"https://www.dropbox.com/home{dropbox_path}"
-message = f"Extracted {downloaded_count} images and uploaded to folder: <a href='{folder_link}' target='_blank'>{folder_link}</a>"
+                downloaded_count = sum(1 for _, name in image_data if os.path.exists(os.path.join(image_dir, name)))
+                folder_link = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{course_folder}"
+                message = f"Extracted {downloaded_count} images and uploaded to folder: <a href='{folder_link}' target='_blank'>{folder_link}</a>"
+
+    return render_template("index.html", message=message)
