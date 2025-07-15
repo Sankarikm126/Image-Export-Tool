@@ -1,7 +1,9 @@
 flask
 requests
 beautifulsoup4
-google-api-python-client
-google-auth
 python-dotenv
 gunicorn
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
