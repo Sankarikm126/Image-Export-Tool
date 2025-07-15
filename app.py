@@ -10,6 +10,7 @@ load_dotenv()
 
 app = Flask(__name__)
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
+SHARED_ROOT_FOLDER = "/AG9LEPMYf67dlFoSMNixca8"  # Default shared Dropbox folder
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
@@ -38,7 +39,6 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
                 for img in soup.find_all("img"):
                     src = img.get("src")
-                    # Handle proxied images (e.g. Next.js)
                     if src and "/_next/image" in src and "url=" in src:
                         parsed = urlparse(src)
                         query = parse_qs(parsed.query)
@@ -81,23 +81,20 @@ def crawl_and_extract(base_url, output_dir, csv_path):
     return image_urls
 
 def upload_to_dropbox(local_path, dropbox_path):
-    shared_base = "/SME"  # top-level shared folder
-    full_path = os.path.join(shared_base, dropbox_path.lstrip("/"))
-    
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
     with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), full_path, mode=dropbox.files.WriteMode.overwrite)
-        print(f"Uploaded to Dropbox: {full_path}")
+        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+        print(f"Uploaded to Dropbox: {dropbox_path}")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
     if request.method == "POST":
         parent_url = request.form["url"]
-        dropbox_folder = request.form.get("dropbox_folder")
+        course_folder = request.form.get("dropbox_folder", "").strip("/")  # e.g., Physics
 
-        if not dropbox_folder:
-            message = "Dropbox folder path is required to upload."
+        if not course_folder:
+            message = "Course folder is required to determine shared path."
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
                 image_dir = os.path.join(tmpdir, "images")
@@ -108,11 +105,11 @@ def index():
 
                 for _, name in image_data:
                     img_path = os.path.join(image_dir, name)
-                    dropbox_img_path = f"{dropbox_folder}/images/{name}"
+                    dropbox_img_path = f"{SHARED_ROOT_FOLDER}/{course_folder}/images/{name}"
                     if os.path.exists(img_path):
                         upload_to_dropbox(img_path, dropbox_img_path)
 
-                upload_to_dropbox(csv_path, f"{dropbox_folder}/image_metadata.csv")
-                message = "Upload to Dropbox completed!"
+                upload_to_dropbox(csv_path, f"{SHARED_ROOT_FOLDER}/{course_folder}/image_metadata.csv")
+                message = "Upload to shared Dropbox folder completed!"
 
     return render_template("index.html", message=message)
