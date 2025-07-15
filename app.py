@@ -123,4 +123,3 @@ upload_to_dropbox(csv_path, f"{dropbox_path}/image_metadata.csv")
 downloaded_count = sum(1 for _, name in image_data if os.path.exists(os.path.join(image_dir, name)))
 folder_link = f"https://www.dropbox.com/home{dropbox_path}"
 message = f"Extracted {downloaded_count} images and uploaded to folder: <a href='{folder_link}' target='_blank'>{folder_link}</a>"
-
