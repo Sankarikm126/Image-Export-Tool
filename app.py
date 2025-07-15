@@ -88,10 +88,22 @@ def crawl_and_extract(base_url, output_dir, csv_path):
     return image_urls
 
 def upload_to_gdrive(local_path, file_name):
+    # Step 1: Validate folder ID access before upload
+    try:
+        service.files().get(
+            fileId=MY_DRIVE_FOLDER_ID,
+            supportsAllDrives=True
+        ).execute()
+    except Exception as e:
+        print(f"[ERROR] Cannot access folder {MY_DRIVE_FOLDER_ID}: {e}")
+        raise
+
+    # Step 2: Proceed with upload
     file_metadata = {
         'name': file_name,
         'parents': [MY_DRIVE_FOLDER_ID]
     }
+
     media = MediaFileUpload(local_path, resumable=True)
     file = service.files().create(
         body=file_metadata,
@@ -99,7 +111,8 @@ def upload_to_gdrive(local_path, file_name):
         fields='id',
         supportsAllDrives=True
     ).execute()
-    print(f"Uploaded to Google Drive: {file.get('id')}")
+
+    print(f"✅ Uploaded to Google Drive: {file.get('id')}")
     return file.get('id')
 
 @app.route("/", methods=["GET", "POST"])
