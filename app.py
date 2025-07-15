@@ -3,21 +3,16 @@ import os, requests, csv, tempfile
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 from datetime import datetime
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from dropbox import Dropbox
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = '/etc/secrets/sodium-daylight-466004-h9-f28e62a166ea.json'
+DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")  # Must have edit access to shared folder
+SHARED_FOLDER_PATH = "/SME"  # This is the root of the shared folder
 
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-service = build('drive', 'v3', credentials=credentials)
-MY_DRIVE_FOLDER_ID = os.environ.get("MY_DRIVE_FOLDER_ID")  # Target folder in user's My Drive
+db = Dropbox(DROPBOX_ACCESS_TOKEN)
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
@@ -87,38 +82,16 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
     return image_urls
 
-def upload_to_gdrive(local_path, file_name):
-    # Step 1: Validate folder ID access before upload
-    try:
-        service.files().get(
-            fileId=MY_DRIVE_FOLDER_ID,
-            supportsAllDrives=True
-        ).execute()
-    except Exception as e:
-        print(f"[ERROR] Cannot access folder {MY_DRIVE_FOLDER_ID}: {e}")
-        raise
-
-    # Step 2: Proceed with upload
-    file_metadata = {
-        'name': file_name,
-        'parents': [MY_DRIVE_FOLDER_ID]
-    }
-
-    media = MediaFileUpload(local_path, resumable=True)
-    file = service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id',
-        supportsAllDrives=True
-    ).execute()
-
-    print(f"✅ Uploaded to Google Drive: {file.get('id')}")
-    return file.get('id')
+def upload_to_dropbox(local_path, dropbox_path):
+    with open(local_path, "rb") as f:
+        db.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+        print(f"Uploaded to Dropbox: {dropbox_path}")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
-    drive_links = []
+    dropbox_links = []
+
     if request.method == "POST":
         parent_url = request.form["url"]
         course_folder = request.form.get("course_folder", "").strip("/")
@@ -133,15 +106,19 @@ def index():
 
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path)
 
+                folder_path = f"{SHARED_FOLDER_PATH}/{course_folder}/images"
+
                 for _, name in image_data:
                     img_path = os.path.join(image_dir, name)
                     if os.path.exists(img_path):
-                        file_id = upload_to_gdrive(img_path, name)
-                        drive_links.append(f"https://drive.google.com/file/d/{file_id}/view")
+                        dropbox_file_path = f"{folder_path}/{name}"
+                        upload_to_dropbox(img_path, dropbox_file_path)
+                        dropbox_links.append(f"https://www.dropbox.com/home{dropbox_file_path}")
 
-                meta_id = upload_to_gdrive(csv_path, "image_metadata.csv")
-                drive_links.append(f"https://drive.google.com/file/d/{meta_id}/view")
+                meta_path = f"{SHARED_FOLDER_PATH}/{course_folder}/image_metadata.csv"
+                upload_to_dropbox(csv_path, meta_path)
+                dropbox_links.append(f"https://www.dropbox.com/home{meta_path}")
 
-                message = "Upload to My Drive completed!" 
+                message = "Upload to Dropbox SME shared folder completed!"
 
-    return render_template("index.html", message=message, links=drive_links)
+    return render_template("index.html", message=message, links=dropbox_links)
