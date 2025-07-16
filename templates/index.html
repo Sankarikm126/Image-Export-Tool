@@ -3,49 +3,30 @@
 <head>
     <title>Extract Images to Dropbox</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 40px;
-        }
-        h2 {
-            color: #2c3e50;
-        }
-        label {
-            font-weight: bold;
-        }
-        input[type="text"] {
-            width: 400px;
-            padding: 8px;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
+        body { font-family: Arial, sans-serif; padding: 40px; }
+        h2 { color: #2c3e50; }
+        label { font-weight: bold; display: block; margin-top: 15px; }
+        input[type="text"] { width: 400px; padding: 8px; margin-top: 5px; }
         input[type="submit"] {
-            padding: 8px 16px;
-            background-color: #2c3e50;
-            color: white;
-            font-size: 14px;
-            border: none;
-            cursor: pointer;
+            margin-top: 20px; padding: 10px 20px;
+            background-color: #2c3e50; color: white; border: none; cursor: pointer;
         }
         .message {
-            margin-top: 20px;
-            padding: 10px;
+            margin-top: 30px; padding: 15px;
             background-color: #ecf0f1;
             border-left: 4px solid #3498db;
         }
-        a {
-            color: #2980b9;
-        }
+        a { color: #2980b9; }
     </style>
 </head>
 <body>
     <h2>Extract Images from Site and Upload to Dropbox</h2>
     <form method="post">
-        <label for="url">Parent Page URL:</label><br>
-        <input type="text" name="url" required><br><br>
+        <label for="url">Parent Page URL:</label>
+        <input type="text" name="url" required>
 
-        <label for="course_folder">Dropbox Folder Path (e.g., <code>CIE/IGCSE/Physics</code>):</label><br>
-        <input type="text" name="course_folder" required><br><br>
+        <label for="course_folder">Dropbox Folder Path (e.g., <code>CIE/IGCSE/Physics</code>):</label>
+        <input type="text" name="course_folder" required>
 
         <input type="submit" value="Start Extraction and Upload">
     </form>
