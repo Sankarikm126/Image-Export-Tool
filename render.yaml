@@ -3,7 +3,7 @@ services:
     name: image-export-tool
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app --timeout 300
+    startCommand: gunicorn main.py --timeout 300
     envVars:
       - key: DROPBOX_ACCESS_TOKEN
         sync: false
