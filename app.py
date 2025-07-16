@@ -98,6 +98,18 @@ def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
 
             except Exception as e:
                 print(f"Failed to process {url}: {e}")
+                    # --- Generate gallery.html ---
+    gallery_html_path = os.path.join(output_dir, "gallery.html")
+    with open(gallery_html_path, "w", encoding="utf-8") as gfile:
+        gfile.write("<html><head><title>Image Gallery</title></head><body>\n")
+        gfile.write("<h2>Extracted Image Gallery</h2>\n")
+        for s3_url in image_urls:
+            gfile.write(f"<img src='{s3_url}' alt='' style='width:150px; margin:5px;'>\n")
+        gfile.write("</body></html>")
+
+    # Upload gallery.html to S3
+    gallery_key = f"{S3_FOLDER_PREFIX}/{course_folder}/gallery.html"
+    upload_to_s3(gallery_html_path, gallery_key)
 
     return image_urls
 
