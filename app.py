@@ -102,7 +102,7 @@ def index():
             with tempfile.TemporaryDirectory() as tmpdir:
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
                 crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
-                dropbox_csv_path = f"{DROPBOX_FOLDER_BASE}/{folder_subpath}/image_metadata.csv"
+                dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv"
                 csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
                 message = f"Extraction complete. <a href='{csv_url}' target='_blank'>Download metadata CSV</a>"
 
