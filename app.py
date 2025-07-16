@@ -64,8 +64,10 @@ def crawl_and_extract(base_url, output_dir, csv_path, dropbox_subfolder):
                             with open(image_path, "wb") as f:
                                 f.write(img_data)
 
-                            dbx_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/{image_name}".replace("//", "/")
+                            dbx_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/Images/{image_name}"
+                            dbx_path = dbx_path.replace("//", "/")
                             dropbox_url = upload_to_dropbox(image_path, dbx_path)
+
 
                             writer.writerow({
                                 "page_url": url,
