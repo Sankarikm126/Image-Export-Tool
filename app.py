@@ -24,10 +24,8 @@ def is_internal_link(link, base_url):
 def has_all_caps_text(image_path):
     try:
         text = pytesseract.image_to_string(Image.open(image_path))
-        words = [word for word in text.split() if word.isalpha()]
-        if not words:
-            return False
-        return all(word.isupper() for word in words)
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        return any(line.isupper() for line in lines if any(c.isalpha() for c in line))
     except Exception:
         return False
 
@@ -79,7 +77,8 @@ def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
                             with open(local_path, 'wb') as f:
                                 f.write(img_data)
 
-                            dropbox_path = f"{SHARED_FOLDER_PATH}/{course_folder}/{image_name}"
+                            # Upload image to Dropbox inside images/
+                            dropbox_path = f"{SHARED_FOLDER_PATH}/{course_folder}/images/{image_name}"
                             dropbox_url = upload_to_dropbox(local_path, dropbox_path)
 
                             is_all_caps = has_all_caps_text(local_path)
@@ -125,6 +124,7 @@ def index():
 
                 image_links = crawl_and_extract(parent_url, image_dir, csv_path, course_folder)
 
+                # Upload metadata CSV directly under the course folder (not inside /images)
                 csv_dropbox_path = f"{SHARED_FOLDER_PATH}/{course_folder}/image_metadata.csv"
                 csv_url = upload_to_dropbox(csv_path, csv_dropbox_path)
 
