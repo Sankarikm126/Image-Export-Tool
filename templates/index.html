@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Extract Images to Amazon S3</title>
+    <title>Extract Images to Dropbox</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -32,19 +32,17 @@
             border-left: 4px solid #3498db;
         }
         a {
-            display: block;
-            margin-top: 5px;
             color: #2980b9;
         }
     </style>
 </head>
 <body>
-    <h2>Extract Images from Site and Upload to Amazon S3</h2>
+    <h2>Extract Images from Site and Upload to Dropbox</h2>
     <form method="post">
         <label for="url">Parent Page URL:</label><br>
         <input type="text" name="url" required><br><br>
 
-        <label for="course_folder">S3 Folder Path (e.g., <code>CIE/IGCSE/Physics</code>):</label><br>
+        <label for="course_folder">Dropbox Folder Path (e.g., <code>/CIE/IGCSE/Physics</code>):</label><br>
         <input type="text" name="course_folder" required><br><br>
 
         <input type="submit" value="Start Extraction and Upload">
