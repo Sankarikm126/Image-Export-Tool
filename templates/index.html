@@ -42,16 +42,7 @@
         <label for="url">Parent Page URL:</label><br>
         <input type="text" name="url" required><br><br>
 
-        <label for="course_folder">Dropbox Folder Path (e.g., <code>/CIE/IGCSE/Physics</code>):</label><br>
+        <label for="course_folder">Dropbox Folder Path (e.g., <code>CIE/IGCSE/Physics</code>):</label><br>
         <input type="text" name="course_folder" required><br><br>
 
-        <input type="submit" value="Start Extraction and Upload">
-    </form>
-
-    {% if message %}
-    <div class="message">
-        {{ message|safe }}
-    </div>
-    {% endif %}
-</body>
-</html>
+        <input
