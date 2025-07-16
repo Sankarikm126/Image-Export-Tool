@@ -2,30 +2,44 @@ from flask import Flask, request, render_template
 import os, requests, csv, tempfile
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
-from datetime import datetime
+import boto3
 from dotenv import load_dotenv
-import dropbox
 
 load_dotenv()
 
 app = Flask(__name__)
-DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
-SHARED_FOLDER_PATH = os.environ.get("SHARED_FOLDER_PATH")
 
-dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+S3_FOLDER_PREFIX = os.environ.get("S3_FOLDER_PREFIX", "edtech")
+
+s3 = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+)
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
     parsed_base = urlparse(base_url)
     return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
 
-def crawl_and_extract(base_url, output_dir, csv_path):
+def upload_to_s3(file_path, s3_key):
+    try:
+        s3.upload_file(file_path, S3_BUCKET_NAME, s3_key)
+        return f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+    except Exception as e:
+        print(f"Failed to upload {file_path} to S3: {e}")
+        return ""
+
+def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
     visited = set()
     image_urls = set()
     queue = [base_url]
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "downloaded"]
+        fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "s3_url"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -51,26 +65,29 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
-
                         image_path = os.path.join(output_dir, image_name)
-                        downloaded = "No"
+
                         try:
                             img_data = requests.get(full_img_url).content
                             with open(image_path, 'wb') as f:
                                 f.write(img_data)
-                            downloaded = "Yes"
-                            image_urls.add((full_img_url, image_name))
-                        except Exception as e:
-                            print(f"Error downloading {full_img_url}: {e}")
 
-                        writer.writerow({
-                            "page_url": url,
-                            "image_url": full_img_url,
-                            "image_name": image_name,
-                            "alt_text_present": "Yes" if alt else "No",
-                            "alt_text": alt,
-                            "downloaded": downloaded
-                        })
+                            s3_key = f"{S3_FOLDER_PREFIX}/{course_folder}/{image_name}".replace("//", "/")
+                            s3_url = upload_to_s3(image_path, s3_key)
+
+                            writer.writerow({
+                                "page_url": url,
+                                "image_url": full_img_url,
+                                "image_name": image_name,
+                                "alt_text_present": "Yes" if alt else "No",
+                                "alt_text": alt,
+                                "s3_url": s3_url
+                            })
+
+                            image_urls.add(s3_url)
+
+                        except Exception as e:
+                            print(f"Error processing {full_img_url}: {e}")
 
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a['href'])
@@ -81,17 +98,6 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                 print(f"Failed to process {url}: {e}")
 
     return image_urls
-
-def upload_to_dropbox(local_path, dropbox_subfolder, file_name):
-    dropbox_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/{file_name}".replace("//", "/")
-    with open(local_path, "rb") as f:
-        dbx.files_upload(
-            f.read(),
-            dropbox_path,
-            mode=dropbox.files.WriteMode.overwrite
-        )
-    print(f"Uploaded to Dropbox: {dropbox_path}")
-    return dropbox_path
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -108,17 +114,14 @@ def index():
                 os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
-                image_data = crawl_and_extract(parent_url, image_dir, csv_path)
+                image_data = crawl_and_extract(parent_url, image_dir, csv_path, course_folder)
 
-                for _, name in image_data:
-                    img_path = os.path.join(image_dir, name)
-                    if os.path.exists(img_path):
-                        upload_to_dropbox(img_path, course_folder, name)
+                # Upload CSV file to S3
+                csv_key = f"{S3_FOLDER_PREFIX}/{course_folder}/image_metadata.csv"
+                upload_to_s3(csv_path, csv_key)
 
-                upload_to_dropbox(csv_path, course_folder, "image_metadata.csv")
-
-                downloaded_count = sum(1 for _, name in image_data if os.path.exists(os.path.join(image_dir, name)))
-                folder_link = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{course_folder}"
-                message = f"Extracted {downloaded_count} images and uploaded to folder: <a href='{folder_link}' target='_blank'>{folder_link}</a>"
+                count = len(image_data)
+                folder_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{S3_FOLDER_PREFIX}/{course_folder}".replace("//", "/")
+                message = f"Extracted {count} images and uploaded to S3 folder: <a href='{folder_url}' target='_blank'>{folder_url}</a>"
 
     return render_template("index.html", message=message)
