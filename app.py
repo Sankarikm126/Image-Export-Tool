@@ -128,14 +128,27 @@ def index():
                 os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
+                # Run crawl and upload
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path, course_folder)
 
-                # Upload CSV file to S3
+                # Upload CSV
                 csv_key = f"{S3_FOLDER_PREFIX}/{course_folder}/image_metadata.csv"
                 csv_url = upload_to_s3(csv_path, csv_key)
 
-                count = len(image_data)
+                # Gallery preview URL
+                gallery_key = f"{S3_FOLDER_PREFIX}/{course_folder}/gallery.html"
+                gallery_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{gallery_key}"
+
+                # S3 Console Link
                 aws_console_link = f"https://s3.console.aws.amazon.com/s3/buckets/{S3_BUCKET_NAME}?prefix={S3_FOLDER_PREFIX}/{course_folder}/"
-                message = f"Extracted {count} images. <a href='{csv_url}' target='_blank'>Download metadata CSV</a> or <a href='{aws_console_link}' target='_blank'>View S3 folder in AWS Console</a>"
+
+                # Message with all links
+                count = len(image_data)
+                message = f"""
+                    Extracted {count} images.<br>
+                    <a href='{csv_url}' target='_blank'>Download metadata CSV</a><br>
+                    <a href='{gallery_url}' target='_blank'>View Gallery</a><br>
+                    <a href='{aws_console_link}' target='_blank'>Open in AWS Console</a>
+                """
 
     return render_template("index.html", message=message)
