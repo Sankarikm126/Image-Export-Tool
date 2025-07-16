@@ -94,38 +94,16 @@ def index():
     message = ""
     if request.method == "POST":
         parent_url = request.form["url"]
-        dropbox_folder = request.form.get("course_folder", "").strip("/")
+        folder_subpath = request.form.get("course_folder", "").strip("/")
 
-        if not dropbox_folder:
-            message = "Dropbox Folder Path is required."
+        if not folder_subpath:
+            message = "Please enter a subfolder path for Dropbox."
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
-                image_dir = os.path.join(tmpdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
+                crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
+                dropbox_csv_path = f"{DROPBOX_FOLDER_BASE}/{folder_subpath}/image_metadata.csv"
+                csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
+                message = f"Extraction complete. <a href='{csv_url}' target='_blank'>Download metadata CSV</a>"
 
-                image_data = crawl_and_extract(parent_url, image_dir, csv_path, dropbox_folder)
-
-                # Upload metadata CSV
-                csv_dropbox_path = f"{SHARED_FOLDER_PATH}/{dropbox_folder}/image_metadata.csv".replace("//", "/")
-                csv_url = upload_to_dropbox(csv_path, csv_dropbox_path)
-
-                # Generate gallery.html
-                gallery_path = os.path.join(tmpdir, "gallery.html")
-                with open(gallery_path, "w", encoding="utf-8") as gfile:
-                    gfile.write("<html><head><title>Image Gallery</title></head><body>\n<h2>Extracted Image Gallery</h2>\n")
-                    for dbx_url, _ in image_data:
-                        gfile.write(f"<img src='{dbx_url}' alt='' style='width:150px; margin:5px;'>\n")
-                    gfile.write("</body></html>")
-
-                gallery_dropbox_path = f"{SHARED_FOLDER_PATH}/{dropbox_folder}/gallery.html".replace("//", "/")
-                gallery_url = upload_to_dropbox(gallery_path, gallery_dropbox_path)
-
-                folder_link = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{dropbox_folder}".replace("//", "/")
-                message = (
-                    f"Extracted {len(image_data)} images.<br>"
-                    f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a><br>"
-                    f"<a href='{gallery_url}' target='_blank'>View Gallery</a><br>"
-                    f"<a href='{folder_link}' target='_blank'>Open in Dropbox</a>"
-                )
     return render_template("index.html", message=message)
