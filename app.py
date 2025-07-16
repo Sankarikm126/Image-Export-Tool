@@ -1,59 +1,149 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Extract Images to Amazon S3</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            padding: 40px;
-        }
-        h2 {
-            color: #2c3e50;
-        }
-        label {
-            font-weight: bold;
-        }
-        input[type="text"] {
-            width: 400px;
-            padding: 8px;
-            margin-bottom: 15px;
-        }
-        input[type="submit"] {
-            padding: 8px 16px;
-            background-color: #2c3e50;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        .message {
-            margin-top: 20px;
-            padding: 10px;
-            background-color: #ecf0f1;
-            border-left: 4px solid #3498db;
-        }
-        a {
-            display: block;
-            margin-top: 5px;
-            color: #2980b9;
-        }
-    </style>
-</head>
-<body>
-    <h2>Extract Images from Site and Upload to Amazon S3</h2>
-    <form method="post">
-        <label for="url">Parent Page URL:</label><br>
-        <input type="text" name="url" required><br><br>
+from flask import Flask, request, render_template
+import os, requests, csv, tempfile
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse, parse_qs
+import boto3
+from dotenv import load_dotenv
 
-        <label for="course_folder">S3 Folder Path (e.g., <code>CIE/IGCSE/Physics</code>):</label><br>
-        <input type="text" name="course_folder" required><br><br>
+load_dotenv()
 
-        <input type="submit" value="Start Extraction and Upload">
-    </form>
+app = Flask(__name__)
 
-    {% if message %}
-    <div class="message">
-        {{ message|safe }}
-    </div>
-    {% endif %}
-</body>
-</html>
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
+S3_FOLDER_PREFIX = os.environ.get("S3_FOLDER_PREFIX", "edtech")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+s3 = boto3.client(
+    's3',
+    region_name=AWS_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+)
+
+def is_internal_link(link, base_url):
+    parsed_link = urlparse(link)
+    parsed_base = urlparse(base_url)
+    return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
+
+def upload_to_s3(file_path, s3_key):
+    try:
+        s3.upload_file(file_path, S3_BUCKET_NAME, s3_key)
+        return f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+    except Exception as e:
+        print(f"Failed to upload {file_path} to S3: {e}")
+        return ""
+
+def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
+    visited = set()
+    image_urls = set()
+    queue = [base_url]
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
+        fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "s3_url", "gallery_html"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        while queue:
+            url = queue.pop(0)
+            if url in visited:
+                continue
+            visited.add(url)
+
+            try:
+                res = requests.get(url)
+                soup = BeautifulSoup(res.text, "html.parser")
+
+                for img in soup.find_all("img"):
+                    src = img.get("src")
+                    if src and "/_next/image" in src and "url=" in src:
+                        parsed = urlparse(src)
+                        query = parse_qs(parsed.query)
+                        if "url" in query:
+                            src = query["url"][0]
+
+                    alt = img.get("alt", "")
+                    if src:
+                        full_img_url = urljoin(url, src)
+                        image_name = os.path.basename(full_img_url.split("?")[0])
+                        image_path = os.path.join(output_dir, image_name)
+
+                        try:
+                            img_data = requests.get(full_img_url).content
+                            with open(image_path, 'wb') as f:
+                                f.write(img_data)
+
+                            s3_key = f"{S3_FOLDER_PREFIX}/{course_folder}/{image_name}".replace("//", "/")
+                            s3_url = upload_to_s3(image_path, s3_key)
+
+                            gallery_tag = f"<img src='{s3_url}' alt='{alt}' style='width:150px;margin:5px;'>"
+
+                            writer.writerow({
+                                "page_url": url,
+                                "image_url": full_img_url,
+                                "image_name": image_name,
+                                "alt_text_present": "Yes" if alt else "No",
+                                "alt_text": alt,
+                                "s3_url": s3_url,
+                                "gallery_html": gallery_tag
+                            })
+
+                            image_urls.add(s3_url)
+
+                        except Exception as e:
+                            print(f"Error processing {full_img_url}: {e}")
+
+                for a in soup.find_all("a", href=True):
+                    link = urljoin(url, a['href'])
+                    if is_internal_link(link, base_url) and link.startswith(base_url):
+                        queue.append(link)
+
+            except Exception as e:
+                print(f"Failed to process {url}: {e}")
+
+    # Generate gallery.html
+    gallery_html_path = os.path.join(output_dir, "gallery.html")
+    with open(gallery_html_path, "w", encoding="utf-8") as gfile:
+        gfile.write("<html><head><title>Image Gallery</title></head><body>\n")
+        gfile.write("<h2>Extracted Image Gallery</h2>\n")
+        for s3_url in image_urls:
+            gfile.write(f"<img src='{s3_url}' alt='' style='width:150px;margin:5px;'>\n")
+        gfile.write("</body></html>\n")
+
+    gallery_key = f"{S3_FOLDER_PREFIX}/{course_folder}/gallery.html"
+    upload_to_s3(gallery_html_path, gallery_key)
+
+    return image_urls, gallery_key
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    message = ""
+    if request.method == "POST":
+        parent_url = request.form["url"]
+        course_folder = request.form.get("course_folder", "").strip("/")
+
+        if not course_folder:
+            message = "Course folder is required to organize extracted content."
+        else:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                image_dir = os.path.join(tmpdir, "images")
+                os.makedirs(image_dir, exist_ok=True)
+                csv_path = os.path.join(tmpdir, "image_metadata.csv")
+
+                image_data, gallery_key = crawl_and_extract(parent_url, image_dir, csv_path, course_folder)
+
+                csv_key = f"{S3_FOLDER_PREFIX}/{course_folder}/image_metadata.csv"
+                csv_url = upload_to_s3(csv_path, csv_key)
+
+                gallery_url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{gallery_key}"
+                aws_console_link = f"https://s3.console.aws.amazon.com/s3/buckets/{S3_BUCKET_NAME}?prefix={S3_FOLDER_PREFIX}/{course_folder}/"
+
+                message = f"""
+                Extracted {len(image_data)} images.<br>
+                <a href="{csv_url}" target="_blank">Download metadata CSV</a><br>
+                <a href="{gallery_url}" target="_blank">View Gallery</a><br>
+                <a href="{aws_console_link}" target="_blank">Open in AWS Console</a>
+                """
+
+    return render_template("index.html", message=message)
