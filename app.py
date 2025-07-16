@@ -3,49 +3,52 @@ import os, requests, csv, tempfile
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 import dropbox
+from dotenv import load_dotenv
 import pytesseract
 from PIL import Image
-from dotenv import load_dotenv
+from io import BytesIO
 
 load_dotenv()
 
 app = Flask(__name__)
 
-DROPBOX_ACCESS_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
-SHARED_FOLDER_PATH = os.environ.get("SHARED_FOLDER_PATH")
-
-dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
+DROPBOX_FOLDER_BASE = os.environ.get("SHARED_FOLDER_PATH", "/Share/SME")
+dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
     parsed_base = urlparse(base_url)
     return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
 
+def upload_to_dropbox(local_path, dropbox_path):
+    with open(local_path, "rb") as f:
+        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+    shared_link = dbx.sharing_create_shared_link_with_settings(dropbox_path)
+    return shared_link.url.replace("?dl=0", "?raw=1")
+
 def has_all_caps_text(image_path):
     try:
-        text = pytesseract.image_to_string(Image.open(image_path))
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-        return any(line.isupper() for line in lines if any(c.isalpha() for c in line))
-    except Exception:
-        return False
+        img = Image.open(image_path)
+        text = pytesseract.image_to_string(img)
+        words = [w for w in text.split() if w.isalpha()]
+        upper_count = sum(1 for w in words if w.isupper())
+        return "Yes" if upper_count >= 1 else "No"
+    except Exception as e:
+        print(f"OCR failed for {image_path}: {e}")
+        return "No"
 
-def upload_to_dropbox(local_path, dropbox_file_path):
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dropbox_file_path, mode=dropbox.files.WriteMode.overwrite)
-    shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dropbox_file_path)
-    return shared_link_metadata.url.replace("?dl=0", "?raw=1")
-
-def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
+def crawl_and_extract(base_url, output_dir, csv_path, folder_subpath):
     visited = set()
-    image_urls = []
     queue = [base_url]
 
+    image_dir = os.path.join(output_dir, "images")
+    os.makedirs(image_dir, exist_ok=True)
+
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = [
-            "page_url", "image_url", "image_name", "alt_text_present", "alt_text",
-            "dropbox_url", "all_caps_text"
-        ]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=[
+            "page_url", "image_url", "image_name", "alt_text_present", "alt_text", "dropbox_url", "contains_all_caps"
+        ])
         writer.writeheader()
 
         while queue:
@@ -63,25 +66,23 @@ def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
                     if src and "/_next/image" in src and "url=" in src:
                         parsed = urlparse(src)
                         query = parse_qs(parsed.query)
-                        if "url" in query:
-                            src = query["url"][0]
+                        src = query.get("url", [src])[0]
 
                     alt = img.get("alt", "")
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
-                        local_path = os.path.join(output_dir, image_name)
+                        image_path = os.path.join(image_dir, image_name)
 
                         try:
                             img_data = requests.get(full_img_url).content
-                            with open(local_path, 'wb') as f:
+                            with open(image_path, 'wb') as f:
                                 f.write(img_data)
 
-                            # Upload image to Dropbox inside images/
-                            dropbox_path = f"{SHARED_FOLDER_PATH}/{course_folder}/images/{image_name}"
-                            dropbox_url = upload_to_dropbox(local_path, dropbox_path)
+                            dropbox_path = f"{DROPBOX_FOLDER_BASE}/{folder_subpath}/{image_name}".replace("//", "/")
+                            dropbox_url = upload_to_dropbox(image_path, dropbox_path)
 
-                            is_all_caps = has_all_caps_text(local_path)
+                            has_caps = has_all_caps_text(image_path)
 
                             writer.writerow({
                                 "page_url": url,
@@ -90,52 +91,40 @@ def crawl_and_extract(base_url, output_dir, csv_path, course_folder):
                                 "alt_text_present": "Yes" if alt else "No",
                                 "alt_text": alt,
                                 "dropbox_url": dropbox_url,
-                                "all_caps_text": "Yes" if is_all_caps else "No"
+                                "contains_all_caps": has_caps
                             })
-
-                            image_urls.append(dropbox_url)
                         except Exception as e:
-                            print(f"Failed to upload {full_img_url}: {e}")
+                            print(f"Image download or upload failed: {full_img_url} - {e}")
 
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a['href'])
-                    if is_internal_link(link, base_url) and link.startswith(base_url):
+                    if is_internal_link(link, base_url):
                         queue.append(link)
 
             except Exception as e:
                 print(f"Failed to process {url}: {e}")
-
-    return image_urls
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
     if request.method == "POST":
         parent_url = request.form["url"]
-        course_folder = request.form.get("course_folder", "").strip("/")
+        folder_subpath = request.form.get("course_folder", "").strip("/")
 
-        if not course_folder:
-            message = "Course folder is required to organize extracted content."
+        if not folder_subpath:
+            message = "Please enter a subfolder path for Dropbox."
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
-                image_dir = os.path.join(tmpdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
+                crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
 
-                image_links = crawl_and_extract(parent_url, image_dir, csv_path, course_folder)
+                # Upload CSV to base Dropbox folder
+                dropbox_csv_path = f"{DROPBOX_FOLDER_BASE}/{folder_subpath}_image_metadata.csv"
+                csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
 
-                # Upload metadata CSV directly under the course folder (not inside /images)
-                csv_dropbox_path = f"{SHARED_FOLDER_PATH}/{course_folder}/image_metadata.csv"
-                csv_url = upload_to_dropbox(csv_path, csv_dropbox_path)
-
-                folder_url = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{course_folder}"
                 message = (
-                    f"Extracted {len(image_links)} images.<br>"
-                    f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a><br>"
-                    f"<a href='{folder_url}' target='_blank'>View Shared Folder</a>"
+                    f"Extraction complete. "
+                    f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a> or "
+                    f"<a href='https://www.dropbox.com/home{DROPBOX_FOLDER_BASE}/{folder_subpath}' target='_blank'>Open Dropbox folder</a>"
                 )
-
     return render_template("index.html", message=message)
-
-if __name__ == "__main__":
-    app.run(debug=True)
