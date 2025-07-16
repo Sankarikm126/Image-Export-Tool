@@ -1,6 +1,7 @@
 flask
 requests
 beautifulsoup4
-boto3
+dropbox
 python-dotenv
-gunicorn
+pytesseract
+Pillow
