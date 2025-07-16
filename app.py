@@ -118,10 +118,10 @@ def index():
 
                 # Upload CSV file to S3
                 csv_key = f"{S3_FOLDER_PREFIX}/{course_folder}/image_metadata.csv"
-                upload_to_s3(csv_path, csv_key)
+                csv_url = upload_to_s3(csv_path, csv_key)
 
                 count = len(image_data)
-                folder_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{S3_FOLDER_PREFIX}/{course_folder}".replace("//", "/")
-                message = f"Extracted {count} images and uploaded to S3 folder: <a href='{folder_url}' target='_blank'>{folder_url}</a>"
+                aws_console_link = f"https://s3.console.aws.amazon.com/s3/buckets/{S3_BUCKET_NAME}?prefix={S3_FOLDER_PREFIX}/{course_folder}/"
+                message = f"Extracted {count} images. <a href='{csv_url}' target='_blank'>Download metadata CSV</a> or <a href='{aws_console_link}' target='_blank'>View S3 folder in AWS Console</a>"
 
     return render_template("index.html", message=message)
