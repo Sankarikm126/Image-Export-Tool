@@ -104,6 +104,10 @@ def index():
                 crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
                 dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv"
                 csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
-                message = f"Extracted {count} images. <a href='{csv_url}' target='_blank'>Download metadata CSV</a> or <a href='{dropbox_folder_url}' target='_blank'>View Dropbox Folder</a>"
-
+                message = (
+                    f"Extracted {count} images. "
+                    f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a> or "
+                    f"<a href='{dropbox_folder_url}' target='_blank'>View Dropbox Folder</a>"
+                )
+                
     return render_template("index.html", message=message)
