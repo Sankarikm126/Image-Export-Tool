@@ -13,9 +13,11 @@ AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME")
 S3_FOLDER_PREFIX = os.environ.get("S3_FOLDER_PREFIX", "edtech")
+AWS_REGION = os.environ.get("AWS_REGION", "eu-north-1")
 
 s3 = boto3.client(
     's3',
+    region_name=AWS_REGION,
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY
 )
