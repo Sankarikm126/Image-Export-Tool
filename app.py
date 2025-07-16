@@ -103,14 +103,30 @@ def index():
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
-                crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
-                dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv"
+                
+                # Perform image extraction and uploading
+                extracted_images = crawl_and_extract(
+                    parent_url,
+                    tmpdir,
+                    csv_path,
+                    folder_subpath
+                )
+
+                # Upload CSV file to Dropbox
+                dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv".replace("//", "/")
                 csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
+
+                # Compute Dropbox folder view URL
+                dropbox_folder_url = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{folder_subpath}".replace("//", "/")
+
+                # Count uploaded images
+                count = len(extracted_images)
+
+                # Compose result message
                 message = (
-                    count = len(extracted_images)
                     f"Extracted {count} images. "
                     f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a> or "
                     f"<a href='{dropbox_folder_url}' target='_blank'>View Dropbox Folder</a>"
                 )
-                
+
     return render_template("index.html", message=message)
