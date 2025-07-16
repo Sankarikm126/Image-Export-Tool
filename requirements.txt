@@ -5,3 +5,4 @@ dropbox
 python-dotenv
 pytesseract
 Pillow
+gunicorn
