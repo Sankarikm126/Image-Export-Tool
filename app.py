@@ -123,10 +123,6 @@ def index():
                 count = len(extracted_images)
 
                 # Compose result message
-                message = (
-                    f"Extracted {count} images. "
-                    f"<a href='{csv_url}' target='_blank'>Download metadata CSV</a> or "
-                    f"<a href='{dropbox_folder_url}' target='_blank'>View Dropbox Folder</a>"
-                )
+                   message = f"Extracted {count} images. Please check your Dropbox 'Extracted Images' folder."
 
     return render_template("index.html", message=message)
