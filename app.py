@@ -8,7 +8,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+
+# Environment variables
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
+DROPBOX_MASTER_PATH = os.environ.get("DROPBOX_MASTER_PATH", "/Extracted-Images")
+
 SKIP_KEYWORDS = [
     "logo", "icon", "avatar", "author", "profile", "signature", "favicon",
     "bio", "team", "headshot", "user", "staff", "linkedin", "twitter", "instagram", "fb", "social"
@@ -45,13 +49,11 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
-
                         if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
                             continue
 
                         image_path = os.path.join(output_dir, image_name)
                         downloaded = "No"
-
                         try:
                             img_resp = requests.get(full_img_url, timeout=10)
                             img_resp.raise_for_status()
@@ -110,14 +112,20 @@ def index():
 
                     for _, img_name in images:
                         local_img_path = os.path.join(image_dir, img_name)
-                        dropbox_img_path = f"/{dropbox_folder}/images/{img_name}"
+                        dropbox_img_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/images/{img_name}".replace("//", "/")
                         if os.path.exists(local_img_path):
                             upload_to_dropbox(local_img_path, dropbox_img_path)
 
-                    upload_to_dropbox(csv_path, f"/{dropbox_folder}/image_metadata.csv")
+                    dropbox_csv_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/image_metadata.csv".replace("//", "/")
+                    upload_to_dropbox(csv_path, dropbox_csv_path)
+
                     message = "Extraction completed. Please check the Dropbox folder."
+
         except Exception as e:
             traceback.print_exc()
-            message = f"❌ An error occurred: <code>{e}</code>"
+            message = f"❌ An error occurred:<br><code>{e}</code>"
 
     return render_template("index.html", message=message)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
