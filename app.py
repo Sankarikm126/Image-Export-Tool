@@ -22,7 +22,12 @@ def is_internal_link(link, base_url):
     parsed_base = urlparse(base_url)
     return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
 
+import time
+
 def crawl_and_extract(base_url, output_dir, csv_path):
+    MAX_PAGES = 200
+    MAX_IMAGES = 200
+
     visited = set()
     queue = [base_url]
     image_data = []
@@ -32,18 +37,23 @@ def crawl_and_extract(base_url, output_dir, csv_path):
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        while queue:
+        while queue and len(visited) < MAX_PAGES and len(image_data) < MAX_IMAGES:
             url = queue.pop(0)
             if url in visited:
                 continue
             visited.add(url)
 
             try:
-                print(f"🌐 Visiting page: {url}")
+                print(f"🌐 Visiting page ({len(visited)}): {url}")
                 res = requests.get(url, timeout=10)
                 soup = BeautifulSoup(res.text, "html.parser")
+                time.sleep(0.2)
 
                 for img in soup.find_all("img"):
+                    if len(image_data) >= MAX_IMAGES:
+                        print("🛑 Reached image limit.")
+                        break
+
                     src = img.get("src")
                     alt = img.get("alt", "")
                     if src:
@@ -62,9 +72,10 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                                 f.write(img_resp.content)
                             downloaded = "Yes"
                             image_data.append((full_img_url, image_name))
-                            print(f"🖼 Downloaded image: {image_name} from {full_img_url}")
+                            print(f"🖼 Downloaded image ({len(image_data)}): {image_name}")
                         except Exception as e:
                             print(f"❌ Error downloading {full_img_url}: {e}")
+                        time.sleep(0.2)
 
                         writer.writerow({
                             "page_url": url,
@@ -77,12 +88,19 @@ def crawl_and_extract(base_url, output_dir, csv_path):
 
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a["href"])
-                    if is_internal_link(link, base_url) and link.startswith(base_url):
+                    if is_internal_link(link, base_url) and link not in visited and link.startswith(base_url):
                         queue.append(link)
+
+                if len(visited) % 10 == 0:
+                    print(f"🧭 Pages crawled: {len(visited)}")
+                if len(image_data) % 10 == 0:
+                    print(f"📷 Images collected: {len(image_data)}")
 
             except Exception as e:
                 print(f"❌ Failed to process {url}: {e}")
+                time.sleep(1)
 
+    print(f"✅ Finished crawling {len(visited)} pages and extracting {len(image_data)} images.")
     return image_data
 
 def upload_to_dropbox(local_path, dropbox_path):
