@@ -64,6 +64,11 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                             continue
 
                         image_name = os.path.basename(full_img_url.split("?")[0])
+                        
+                        if image_name in seen_images:
+                            print(f"🔁 Skipping duplicate image: {image_name}")
+                            continue
+                        seen_images.add(image_name)
 
                         if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
                             continue
