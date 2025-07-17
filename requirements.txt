@@ -4,3 +4,4 @@ beautifulsoup4
 dropbox
 python-dotenv
 gunicorn
+Pillow
