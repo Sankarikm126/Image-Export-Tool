@@ -96,7 +96,7 @@ def index():
     if request.method == "POST":
         try:
             parent_url = request.form["url"]
-            dropbox_folder = request.form.get("dropbox_folder", "").strip("/")
+            dropbox_folder = request.form.get("dropbox_folder", "").strip().strip("/")
 
             if not dropbox_folder:
                 message = "❌ Dropbox folder path is required."
@@ -106,10 +106,8 @@ def index():
                     os.makedirs(image_dir, exist_ok=True)
                     csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
-                    print("🔍 Starting extraction...")
                     images = crawl_and_extract(parent_url, image_dir, csv_path)
 
-                    print("☁️ Uploading to Dropbox...")
                     for _, img_name in images:
                         local_img_path = os.path.join(image_dir, img_name)
                         dropbox_img_path = f"/{dropbox_folder}/images/{img_name}"
@@ -117,13 +115,9 @@ def index():
                             upload_to_dropbox(local_img_path, dropbox_img_path)
 
                     upload_to_dropbox(csv_path, f"/{dropbox_folder}/image_metadata.csv")
-                    message = f"✅ Uploaded {len(images)} images and metadata to Dropbox: <strong>{dropbox_folder}</strong>"
-
+                    message = "Extraction completed. Please check the Dropbox folder."
         except Exception as e:
             traceback.print_exc()
-            message = f"❌ An error occurred:<br><code>{e}</code>"
+            message = f"❌ An error occurred: <code>{e}</code>"
 
     return render_template("index.html", message=message)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
