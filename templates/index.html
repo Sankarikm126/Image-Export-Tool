@@ -61,11 +61,12 @@
             <label for="url">Parent URL</label>
             <input type="text" id="url" name="url" placeholder="https://example.com/page" required>
 
-            <label for="course_folder">Dropbox Subfolder Path</label>
-            <input type="text" id="course_folder" name="course_folder" placeholder="MyCourse/Subfolder" required>
+            <label for="dropbox_folder">Dropbox Subfolder Path</label>
+            <input type="text" id="dropbox_folder" name="dropbox_folder" placeholder="MyCourse/Subfolder" required>
 
             <button type="submit">Start Extraction</button>
         </form>
+
 
         {% if message %}
         <div class="message">
