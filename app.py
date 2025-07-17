@@ -58,6 +58,11 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     alt = img.get("alt", "")
                     if src:
                         full_img_url = urljoin(url, src)
+
+                        if full_img_url.startswith("data:"):
+                            print(f"⚠️ Skipping embedded image: {full_img_url[:60]}...")
+                            continue
+
                         image_name = os.path.basename(full_img_url.split("?")[0])
 
                         if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
