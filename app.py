@@ -1,8 +1,7 @@
 from flask import Flask, request, render_template
-import os, requests, csv, tempfile
+import os, requests, csv, tempfile, traceback
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-from datetime import datetime
 import dropbox
 from dotenv import load_dotenv
 
@@ -10,7 +9,6 @@ load_dotenv()
 
 app = Flask(__name__)
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
-
 SKIP_KEYWORDS = [
     "logo", "icon", "avatar", "author", "profile", "signature", "favicon",
     "bio", "team", "headshot", "user", "staff", "linkedin", "twitter", "instagram", "fb", "social"
@@ -23,8 +21,8 @@ def is_internal_link(link, base_url):
 
 def crawl_and_extract(base_url, output_dir, csv_path):
     visited = set()
-    image_urls = set()
     queue = [base_url]
+    image_data = []
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
         fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "downloaded"]
@@ -38,7 +36,7 @@ def crawl_and_extract(base_url, output_dir, csv_path):
             visited.add(url)
 
             try:
-                res = requests.get(url)
+                res = requests.get(url, timeout=10)
                 soup = BeautifulSoup(res.text, "html.parser")
 
                 for img in soup.find_all("img"):
@@ -47,17 +45,20 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
+
                         if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
                             continue
 
                         image_path = os.path.join(output_dir, image_name)
                         downloaded = "No"
+
                         try:
-                            img_data = requests.get(full_img_url).content
+                            img_resp = requests.get(full_img_url, timeout=10)
+                            img_resp.raise_for_status()
                             with open(image_path, 'wb') as f:
-                                f.write(img_data)
+                                f.write(img_resp.content)
                             downloaded = "Yes"
-                            image_urls.add((full_img_url, image_name))
+                            image_data.append((full_img_url, image_name))
                         except Exception as e:
                             print(f"Error downloading {full_img_url}: {e}")
 
@@ -71,46 +72,56 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                         })
 
                 for a in soup.find_all("a", href=True):
-                    link = urljoin(url, a['href'])
+                    link = urljoin(url, a["href"])
                     if is_internal_link(link, base_url) and link.startswith(base_url):
                         queue.append(link)
 
             except Exception as e:
                 print(f"Failed to process {url}: {e}")
 
-    return image_urls
+    return image_data
 
 def upload_to_dropbox(local_path, dropbox_path):
-    dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-        print(f"Uploaded to Dropbox: {dropbox_path}")
+    try:
+        dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+        with open(local_path, "rb") as f:
+            dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+        print(f"✅ Uploaded: {dropbox_path}")
+    except Exception as e:
+        print(f"❌ Dropbox upload failed: {dropbox_path} - {e}")
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     message = ""
     if request.method == "POST":
-        parent_url = request.form["url"]
-        dropbox_folder = request.form.get("dropbox_folder")
+        try:
+            parent_url = request.form["url"]
+            dropbox_folder = request.form.get("dropbox_folder", "").strip("/")
 
-        if not dropbox_folder:
-            message = "Dropbox folder path is required to upload."
-        else:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                image_dir = os.path.join(tmpdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
-                csv_path = os.path.join(tmpdir, "image_metadata.csv")
+            if not dropbox_folder:
+                message = "❌ Dropbox folder path is required."
+            else:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    image_dir = os.path.join(tmpdir, "images")
+                    os.makedirs(image_dir, exist_ok=True)
+                    csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
-                image_data = crawl_and_extract(parent_url, image_dir, csv_path)
+                    print("🔍 Starting extraction...")
+                    images = crawl_and_extract(parent_url, image_dir, csv_path)
 
-                for _, name in image_data:
-                    img_path = os.path.join(image_dir, name)
-                    dropbox_img_path = f"{dropbox_folder}/images/{name}"
-                    if os.path.exists(img_path):
-                        upload_to_dropbox(img_path, dropbox_img_path)
+                    print("☁️ Uploading to Dropbox...")
+                    for _, img_name in images:
+                        local_img_path = os.path.join(image_dir, img_name)
+                        dropbox_img_path = f"/{dropbox_folder}/images/{img_name}"
+                        if os.path.exists(local_img_path):
+                            upload_to_dropbox(local_img_path, dropbox_img_path)
 
-                upload_to_dropbox(csv_path, f"{dropbox_folder}/image_metadata.csv")
-                message = "Upload to Dropbox completed!"
+                    upload_to_dropbox(csv_path, f"/{dropbox_folder}/image_metadata.csv")
+                    message = f"✅ Uploaded {len(images)} images and metadata to Dropbox: <strong>{dropbox_folder}</strong>"
+
+        except Exception as e:
+            traceback.print_exc()
+            message = f"❌ An error occurred:<br><code>{e}</code>"
 
     return render_template("index.html", message=message)
 
