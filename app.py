@@ -4,6 +4,8 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 import dropbox
 from dotenv import load_dotenv
+from PIL import Image
+from io import BytesIO
 
 load_dotenv()
 
@@ -29,11 +31,11 @@ def crawl_and_extract(base_url, output_dir, csv_path, dropbox_subfolder):
     image_urls = set()
     queue = [base_url]
 
-    os.makedirs(output_dir, exist_ok=True)
+    image_dir = os.path.join(output_dir, "Images")
+    os.makedirs(image_dir, exist_ok=True)
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "dropbox_url"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "dropbox_url"])
         writer.writeheader()
 
         while queue:
@@ -41,55 +43,52 @@ def crawl_and_extract(base_url, output_dir, csv_path, dropbox_subfolder):
             if url in visited:
                 continue
             visited.add(url)
-
             try:
                 res = requests.get(url)
                 soup = BeautifulSoup(res.text, "html.parser")
-
                 for img in soup.find_all("img"):
                     src = img.get("src")
-                    if src and "/_next/image" in src and "url=" in src:
-                        parsed = urlparse(src)
-                        query = parse_qs(parsed.query)
-                        if "url" in query:
-                            src = query["url"][0]
+                    if src and "/_next/image" not in src:
+                        parsed_src = urlparse(src)
+                        query = parse_qs(parsed_src.query)
+                        img_url = query.get("url", [src])[0] if "url" in query else src
+                        full_img_url = urljoin(url, img_url)
+                        if full_img_url in image_urls:
+                            continue
+                        image_urls.add(full_img_url)
 
-                    if src:
-                        full_img_url = urljoin(url, src)
-                        image_name = os.path.basename(full_img_url.split("?")[0])
-                        image_path = os.path.join(output_dir, image_name)
-                        alt = img.get("alt", "")
                         try:
-                            img_data = requests.get(full_img_url).content
-                            with open(image_path, "wb") as f:
-                                f.write(img_data)
+                            img_content = requests.get(full_img_url).content
+                            image_name = os.path.basename(full_img_url.split("?")[0])
+                            image_path = os.path.join(image_dir, image_name)
 
-                            dbx_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/Images/{image_name}"
-                            dbx_path = dbx_path.replace("//", "/")
-                            dropbox_url = upload_to_dropbox(image_path, dbx_path)
+                            with open(image_path, 'wb') as f:
+                                f.write(img_content)
 
+                            dropbox_image_path = f"{SHARED_FOLDER_PATH}/{dropbox_subfolder}/Images/{image_name}".replace("//", "/")
+                            dropbox_url = upload_to_dropbox(image_path, dropbox_image_path)
 
+                            alt_text = img.get("alt", "")
                             writer.writerow({
                                 "page_url": url,
                                 "image_url": full_img_url,
                                 "image_name": image_name,
-                                "alt_text_present": "Yes" if alt else "No",
-                                "alt_text": alt,
+                                "alt_text_present": "Yes" if alt_text else "No",
+                                "alt_text": alt_text,
                                 "dropbox_url": dropbox_url
                             })
-                            image_urls.add((dropbox_url, image_name))
                         except Exception as e:
-                            print(f"Download failed: {full_img_url} | {e}")
+                            print(f"Image download or upload failed: {full_img_url} - {e}")
 
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a["href"])
-                    if is_internal_link(link, base_url) and link.startswith(base_url):
+                    if is_internal_link(link, base_url):
                         queue.append(link)
 
             except Exception as e:
                 print(f"Failed to process {url}: {e}")
 
-    return image_urls
+    return len(image_urls)
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -103,26 +102,11 @@ def index():
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
-                
-                # Perform image extraction and uploading
-                extracted_images = crawl_and_extract(
-                    parent_url,
-                    tmpdir,
-                    csv_path,
-                    folder_subpath
-                )
+                image_count = crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
 
-                # Upload CSV file to Dropbox
                 dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv".replace("//", "/")
-                csv_url = upload_to_dropbox(csv_path, dropbox_csv_path)
+                upload_to_dropbox(csv_path, dropbox_csv_path)
 
-                # Compute Dropbox folder view URL
-                dropbox_folder_url = f"https://www.dropbox.com/home{SHARED_FOLDER_PATH}/{folder_subpath}".replace("//", "/")
-
-                # Count uploaded images
-                count = len(extracted_images)
-
-                # Compose result message
-                message = f"Extracted {count} images. Please check your Dropbox 'Extracted Images' folder."
+                message = f"Extracted {image_count} images. Please check your Dropbox folder for images and the CSV file."
 
     return render_template("index.html", message=message)
