@@ -3,6 +3,7 @@ import os, requests, csv, tempfile, traceback
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 import dropbox
+import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -105,13 +106,13 @@ def crawl_and_extract(base_url, output_dir, csv_path, dropbox_subfolder):
 def index():
     message = ""
     if request.method == "POST":
-        parent_url = request.form["url"]
-        folder_subpath = request.form.get("course_folder", "").strip("/")
+        try:
+            parent_url = request.form["url"]
+            folder_subpath = request.form.get("course_folder", "").strip("/")
 
-        if not folder_subpath:
-            message = "Please enter a subfolder path for Dropbox."
-        else:
-            try:
+            if not folder_subpath:
+                message = "Please enter a subfolder path for Dropbox."
+            else:
                 with tempfile.TemporaryDirectory() as tmpdir:
                     csv_path = os.path.join(tmpdir, "image_metadata.csv")
                     image_count = crawl_and_extract(parent_url, tmpdir, csv_path, folder_subpath)
@@ -119,9 +120,9 @@ def index():
                     dropbox_csv_path = f"{SHARED_FOLDER_PATH}/{folder_subpath}/image_metadata.csv".replace("//", "/")
                     upload_to_dropbox(csv_path, dropbox_csv_path)
 
-                    message = f"✅ Extracted {image_count} images.<br>Check Dropbox folder:<br><strong>{folder_subpath}</strong>."
-            except Exception as e:
-                traceback.print_exc()
-                message = f"❌ An error occurred during processing:<br><code>{e}</code>"
+                    message = f"✅ Extracted {image_count} images.<br>Check Dropbox folder: <strong>{folder_subpath}</strong>."
+        except Exception as e:
+            traceback.print_exc()
+            message = f"❌ Error: <code>{e}</code>"
 
     return render_template("index.html", message=message)
