@@ -23,11 +23,11 @@ def is_internal_link(link, base_url):
     parsed_base = urlparse(base_url)
     return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
 
-def crawl_and_extract(base_url, output_dir, csv_path):
+def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
     visited = set()
-    image_urls = set()
-    seen_images = set()
+    downloaded_images = set()
     queue = [base_url]
+    image_count = 0
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
         fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "downloaded"]
@@ -45,38 +45,40 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                 soup = BeautifulSoup(res.text, "html.parser")
 
                 for img in soup.find_all("img"):
-                    if len(image_urls) >= MAX_IMAGES:
-                        print("🚫 Reached image limit.")
-                        break
+                    if image_count >= max_images:
+                        print("🟠 Reached max image limit.")
+                        return
 
                     src = img.get("src")
                     alt = img.get("alt", "")
-                    if not src:
-                        print("⚠️ Missing src, skipping image.")
+
+                    if not src or src.startswith("data:image"):  # Skip inline/base64 images
+                        print(f"⚠️ Skipping embedded image: {src[:30]}..." if src else "⚠️ Skipping empty src.")
                         continue
 
                     full_img_url = urljoin(url, src)
                     image_name = os.path.basename(full_img_url.split("?")[0])
 
-                    if image_name in seen_images:
-                        print(f"🔁 Skipping duplicate image: {image_name}")
-                        continue
-
-                    if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
+                    # Skip duplicates and unwanted keywords
+                    if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS) or full_img_url in downloaded_images:
+                        print(f"⏭️ Skipping duplicate or filtered image: {image_name}")
                         continue
 
                     image_path = os.path.join(output_dir, image_name)
                     downloaded = "No"
+
                     try:
                         img_resp = requests.get(full_img_url, timeout=10)
                         img_resp.raise_for_status()
                         with open(image_path, 'wb') as f:
                             f.write(img_resp.content)
                         downloaded = "Yes"
-                        image_urls.add((full_img_url, image_name))
-                        print(f"✅ Downloaded image ({len(image_urls)}): {image_name}")
+                        image_count += 1
+                        downloaded_images.add(full_img_url)
+                        print(f"✅ Downloaded image ({image_count}): {image_name}")
+
                     except Exception as e:
-                        print(f"Error downloading {full_img_url}: {e}")
+                        print(f"❌ Error downloading {full_img_url}: {e}")
 
                     writer.writerow({
                         "page_url": url,
@@ -86,17 +88,17 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                         "alt_text": alt,
                         "downloaded": downloaded
                     })
-                    seen_images.add(image_name)
 
+                # Queue internal links for crawling
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a['href'])
                     if is_internal_link(link, base_url) and link.startswith(base_url):
                         queue.append(link)
 
             except Exception as e:
-                print(f"Failed to process {url}: {e}")
+                print(f"🚫 Failed to process {url}: {e}")
 
-    return image_urls
+    return list(downloaded_images)
 
 def upload_to_dropbox(local_path, dropbox_path):
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
