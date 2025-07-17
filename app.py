@@ -120,11 +120,12 @@ def index():
 
                     print(f"➡️ Dropbox upload path: {DROPBOX_MASTER_PATH}/{dropbox_folder}")
 
-                    for _, img_name in images:
-                        local_img_path = os.path.join(image_dir, img_name)
-                        dropbox_img_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/images/{img_name}".replace("//", "/")
+                    # ✅ FIXED: correct unpacking of (url, name)
+                    for full_img_url, image_name in images:
+                        local_img_path = os.path.join(image_dir, image_name)
+                        dropbox_img_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/images/{image_name}".replace("//", "/")
                         if os.path.exists(local_img_path):
-                            print(f"📤 Uploading image: {img_name}")
+                            print(f"📤 Uploading image: {image_name}")
                             upload_to_dropbox(local_img_path, dropbox_img_path)
                         else:
                             print(f"❌ Skipping missing image: {local_img_path}")
