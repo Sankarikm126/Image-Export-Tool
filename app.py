@@ -9,7 +9,6 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Environment variables
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
 DROPBOX_MASTER_PATH = os.environ.get("DROPBOX_MASTER_PATH", "/Extracted-Images")
 
@@ -40,6 +39,7 @@ def crawl_and_extract(base_url, output_dir, csv_path):
             visited.add(url)
 
             try:
+                print(f"🌐 Visiting page: {url}")
                 res = requests.get(url, timeout=10)
                 soup = BeautifulSoup(res.text, "html.parser")
 
@@ -49,6 +49,7 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                     if src:
                         full_img_url = urljoin(url, src)
                         image_name = os.path.basename(full_img_url.split("?")[0])
+
                         if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS):
                             continue
 
@@ -61,8 +62,9 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                                 f.write(img_resp.content)
                             downloaded = "Yes"
                             image_data.append((full_img_url, image_name))
+                            print(f"🖼 Downloaded image: {image_name} from {full_img_url}")
                         except Exception as e:
-                            print(f"Error downloading {full_img_url}: {e}")
+                            print(f"❌ Error downloading {full_img_url}: {e}")
 
                         writer.writerow({
                             "page_url": url,
@@ -79,12 +81,16 @@ def crawl_and_extract(base_url, output_dir, csv_path):
                         queue.append(link)
 
             except Exception as e:
-                print(f"Failed to process {url}: {e}")
+                print(f"❌ Failed to process {url}: {e}")
 
     return image_data
 
 def upload_to_dropbox(local_path, dropbox_path):
     try:
+        if not os.path.exists(local_path):
+            print(f"❌ Local file missing: {local_path}")
+            return
+        print(f"⬆️ Uploading to Dropbox: {dropbox_path} from {local_path}")
         dbx = dropbox.Dropbox(DROPBOX_TOKEN)
         with open(local_path, "rb") as f:
             dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
@@ -108,13 +114,20 @@ def index():
                     os.makedirs(image_dir, exist_ok=True)
                     csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
+                    print(f"🔍 Starting extraction from: {parent_url}")
                     images = crawl_and_extract(parent_url, image_dir, csv_path)
+                    print(f"📦 Total images extracted: {len(images)}")
+
+                    print(f"➡️ Dropbox upload path: {DROPBOX_MASTER_PATH}/{dropbox_folder}")
 
                     for _, img_name in images:
                         local_img_path = os.path.join(image_dir, img_name)
                         dropbox_img_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/images/{img_name}".replace("//", "/")
                         if os.path.exists(local_img_path):
+                            print(f"📤 Uploading image: {img_name}")
                             upload_to_dropbox(local_img_path, dropbox_img_path)
+                        else:
+                            print(f"❌ Skipping missing image: {local_img_path}")
 
                     dropbox_csv_path = f"{DROPBOX_MASTER_PATH}/{dropbox_folder}/image_metadata.csv".replace("//", "/")
                     upload_to_dropbox(csv_path, dropbox_csv_path)
