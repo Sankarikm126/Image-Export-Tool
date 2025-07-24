@@ -106,15 +106,15 @@ def upload_to_dropbox(local_path, dropbox_path):
         dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
         print(f"✅ Uploaded to Dropbox: {dropbox_path}")
 
-@app.route("/", methods=["GET", "POST"])
+@app.route('/', methods=['GET', 'POST'])
 def index():
     message = ""
-    if request.method == "POST":
-        parent_url = request.form["url"]
-        subfolder = request.form.get("dropbox_folder")
+    if request.method == 'POST':
+        parent_url = request.form.get('url')
+        subfolder = request.form.get('subfolder', 'sample1')
 
-        if not subfolder:
-            message = "❌ Dropbox folder path is required."
+        if not parent_url:
+            message = "❌ Please enter a valid parent URL."
         else:
             with tempfile.TemporaryDirectory() as tmpdir:
                 image_dir = os.path.join(tmpdir, "images")
@@ -123,18 +123,17 @@ def index():
 
                 image_data = crawl_and_extract(parent_url, image_dir, csv_path)
 
-        for url, name, alt in image_data:
-            img_path = os.path.join(image_dir, name)
-            dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{name}"
-            if os.path.exists(img_path):
-                upload_to_dropbox(img_path, dropbox_img_path)
+                for url, name, alt in image_data:
+                    img_path = os.path.join(image_dir, name)
+                    dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{name}"
+                    if os.path.exists(img_path):
+                        upload_to_dropbox(img_path, dropbox_img_path)
 
-        # Upload metadata CSV to Dropbox
-        dropbox_csv_path = f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv"
-        upload_to_dropbox(csv_path, dropbox_csv_path)
-        message = "✅ Extraction and upload completed. Please check your Dropbox folder."
+                upload_to_dropbox(csv_path, f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv")
+                message = "✅ Extraction and upload completed. Please check your Dropbox folder."
 
     return render_template("index.html", message=message)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    app.run(debug=True)
+
