@@ -111,7 +111,9 @@ def index():
     message = ""
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        subfolder = request.form.get('subfolder', 'sample1')
+        raw_subfolder = request.form.get('subfolder', 'sample1')
+        subfolder = raw_subfolder.strip().replace("/", "-").replace("\\", "-")
+        print(f"📁 Using subfolder name: {subfolder}")
 
         if not parent_url:
             message = "❌ Please enter a valid parent URL."
