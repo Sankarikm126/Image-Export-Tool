@@ -42,8 +42,12 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
             visited.add(url)
 
             try:
-                res = requests.get(url)
+                res = requests.get(url, timeout=15)
+                res.raise_for_status()
                 soup = BeautifulSoup(res.text, "html.parser")
+            except requests.exceptions.RequestException as e:
+                print(f"🚫 Failed to fetch {url}: {e}")
+                continue
 
                 for img in soup.find_all("img"):
                     if image_count >= max_images:
