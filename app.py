@@ -49,58 +49,55 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
                 print(f"🚫 Failed to fetch {url}: {e}")
                 continue
 
-                for img in soup.find_all("img"):
-                    if image_count >= max_images:
-                        print("🟠 Reached max image limit.")
-                        return image_data
+            for img in soup.find_all("img"):
+                if image_count >= max_images:
+                    print("🟠 Reached max image limit.")
+                    return image_data
 
-                    src = img.get("src")
-                    alt = img.get("alt", "")
+                src = img.get("src")
+                alt = img.get("alt", "")
 
-                    if not src or src.startswith("data:image"):
-                        print(f"⚠️ Skipping embedded image: {src[:30]}..." if src else "⚠️ Skipping empty src.")
-                        continue
+                if not src or src.startswith("data:image"):
+                    print(f"⚠️ Skipping embedded image: {src[:30]}..." if src else "⚠️ Skipping empty src.")
+                    continue
 
-                    full_img_url = urljoin(url, src)
-                    image_name = os.path.basename(full_img_url.split("?")[0])
+                full_img_url = urljoin(url, src)
+                image_name = os.path.basename(full_img_url.split("?")[0])
 
-                    if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS) or full_img_url in downloaded_urls:
-                        print(f"⏭️ Skipping duplicate or filtered image: {image_name}")
-                        continue
+                if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS) or full_img_url in downloaded_urls:
+                    print(f"⏭️ Skipping duplicate or filtered image: {image_name}")
+                    continue
 
-                    image_path = os.path.join(output_dir, image_name)
-                    downloaded = "No"
+                image_path = os.path.join(output_dir, image_name)
+                downloaded = "No"
 
-                    try:
-                        img_resp = requests.get(full_img_url, timeout=10)
-                        img_resp.raise_for_status()
-                        with open(image_path, 'wb') as f:
-                            f.write(img_resp.content)
-                        downloaded = "Yes"
-                        image_count += 1
-                        downloaded_urls.add(full_img_url)
-                        image_data.append((full_img_url, image_name, alt))
-                        print(f"✅ Downloaded image ({image_count}): {image_name}")
+                try:
+                    img_resp = requests.get(full_img_url, timeout=10)
+                    img_resp.raise_for_status()
+                    with open(image_path, 'wb') as f:
+                        f.write(img_resp.content)
+                    downloaded = "Yes"
+                    image_count += 1
+                    downloaded_urls.add(full_img_url)
+                    image_data.append((full_img_url, image_name, alt))
+                    print(f"✅ Downloaded image ({image_count}): {image_name}")
 
-                    except Exception as e:
-                        print(f"❌ Error downloading {full_img_url}: {e}")
+                except Exception as e:
+                    print(f"❌ Error downloading {full_img_url}: {e}")
 
-                    writer.writerow({
-                        "page_url": url,
-                        "image_url": full_img_url,
-                        "image_name": image_name,
-                        "alt_text_present": "Yes" if alt else "No",
-                        "alt_text": alt,
-                        "downloaded": downloaded
-                    })
+                writer.writerow({
+                    "page_url": url,
+                    "image_url": full_img_url,
+                    "image_name": image_name,
+                    "alt_text_present": "Yes" if alt else "No",
+                    "alt_text": alt,
+                    "downloaded": downloaded
+                })
 
-                for a in soup.find_all("a", href=True):
-                    link = urljoin(url, a['href'])
-                    if is_internal_link(link, base_url) and link.startswith(base_url):
-                        queue.append(link)
-
-            except Exception as e:
-                print(f"🚫 Failed to process {url}: {e}")
+            for a in soup.find_all("a", href=True):
+                link = urljoin(url, a['href'])
+                if is_internal_link(link, base_url) and link.startswith(base_url):
+                    queue.append(link)
 
     return image_data
 
@@ -116,7 +113,7 @@ def index():
     if request.method == 'POST':
         parent_url = request.form.get('url')
         raw_subfolder = request.form.get('subfolder', 'sample1')
-        subfolder = request.form.get('subfolder', 'sample1').strip()
+        subfolder = raw_subfolder.strip().replace("/", "-").replace("\\", "-")
         print(f"🟨 Using subfolder name: {subfolder}")
 
         if not parent_url:
