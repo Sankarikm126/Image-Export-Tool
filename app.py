@@ -113,7 +113,7 @@ def index():
         parent_url = request.form.get('url')
         raw_subfolder = request.form.get('subfolder', 'sample1')
         subfolder = raw_subfolder.strip().replace("/", "-").replace("\\", "-")
-        print(f"📁 Using subfolder name: {subfolder}")
+        print(f"🟨 Using subfolder name: {subfolder}")
 
         if not parent_url:
             message = "❌ Please enter a valid parent URL."
@@ -123,13 +123,16 @@ def index():
                 os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
-                image_data = crawl_and_extract(parent_url, image_dir, csv_path)
+                crawl_and_extract(parent_url, image_dir, csv_path)
 
-                for url, name, alt in image_data:
-                    img_path = os.path.join(image_dir, name)
-                    dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{name}"
-                    if os.path.exists(img_path):
-                        upload_to_dropbox(img_path, dropbox_img_path)
+                with open(csv_path, newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    for row in reader:
+                        image_name = row["image_name"]
+                        img_path = os.path.join(image_dir, image_name)
+                        dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{image_name}"
+                        if os.path.exists(img_path):
+                            upload_to_dropbox(img_path, dropbox_img_path)
 
                 upload_to_dropbox(csv_path, f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv")
                 message = "✅ Extraction and upload completed. Please check your Dropbox folder."
