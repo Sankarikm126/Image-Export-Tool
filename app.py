@@ -25,7 +25,8 @@ def is_internal_link(link, base_url):
 
 def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
     visited = set()
-    downloaded_images = set()
+    downloaded_urls = set()
+    image_data = []
     queue = [base_url]
     image_count = 0
 
@@ -47,20 +48,19 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
                 for img in soup.find_all("img"):
                     if image_count >= max_images:
                         print("🟠 Reached max image limit.")
-                        return
+                        return image_data
 
                     src = img.get("src")
                     alt = img.get("alt", "")
 
-                    if not src or src.startswith("data:image"):  # Skip inline/base64 images
+                    if not src or src.startswith("data:image"):
                         print(f"⚠️ Skipping embedded image: {src[:30]}..." if src else "⚠️ Skipping empty src.")
                         continue
 
                     full_img_url = urljoin(url, src)
                     image_name = os.path.basename(full_img_url.split("?")[0])
 
-                    # Skip duplicates and unwanted keywords
-                    if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS) or full_img_url in downloaded_images:
+                    if any(kw in full_img_url.lower() for kw in SKIP_KEYWORDS) or full_img_url in downloaded_urls:
                         print(f"⏭️ Skipping duplicate or filtered image: {image_name}")
                         continue
 
@@ -74,7 +74,8 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
                             f.write(img_resp.content)
                         downloaded = "Yes"
                         image_count += 1
-                        downloaded_images.add(full_img_url)
+                        downloaded_urls.add(full_img_url)
+                        image_data.append((full_img_url, image_name, alt))
                         print(f"✅ Downloaded image ({image_count}): {image_name}")
 
                     except Exception as e:
@@ -89,7 +90,6 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
                         "downloaded": downloaded
                     })
 
-                # Queue internal links for crawling
                 for a in soup.find_all("a", href=True):
                     link = urljoin(url, a['href'])
                     if is_internal_link(link, base_url) and link.startswith(base_url):
@@ -98,7 +98,7 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=200):
             except Exception as e:
                 print(f"🚫 Failed to process {url}: {e}")
 
-    return list(downloaded_images)
+    return image_data
 
 def upload_to_dropbox(local_path, dropbox_path):
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
@@ -136,4 +136,3 @@ def index():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
