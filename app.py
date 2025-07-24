@@ -113,7 +113,7 @@ def index():
     if request.method == 'POST':
         parent_url = request.form.get('url')
         raw_subfolder = request.form.get('subfolder', 'sample1')
-        subfolder = raw_subfolder.strip().replace("/", "-").replace("\\", "-")
+        subfolder = raw_subfolder.strip().strip("/\\")  # ✅ this line preserves path structure
         print(f"🟨 Using subfolder name: {subfolder}")
 
         if not parent_url:
