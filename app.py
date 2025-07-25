@@ -7,11 +7,11 @@ import dropbox
 from dotenv import load_dotenv
 
 load_dotenv()
-
 app = Flask(__name__)
+
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
 DROPBOX_BASE_PATH = os.environ.get("DROPBOX_MASTER_FOLDER", "/Extracted-Images")
-MAX_IMAGES = 500
+MAX_IMAGES = 500  # You can increase this if needed
 
 
 def is_internal_link(link, base_url):
@@ -20,7 +20,7 @@ def is_internal_link(link, base_url):
     return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
 
 
-def crawl_and_extract(base_url, output_dir, csv_path, max_images=500):
+def crawl_and_extract(base_url, output_dir, csv_path, max_images=MAX_IMAGES):
     visited = set()
     downloaded_urls = set()
     image_data = []
@@ -39,7 +39,7 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=500):
             visited.add(url)
 
             try:
-                res = requests.get(url, timeout=15)
+                res = requests.get(url, timeout=30)
                 res.raise_for_status()
                 soup = BeautifulSoup(res.text, "html.parser")
             except requests.exceptions.RequestException as e:
@@ -58,7 +58,6 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=500):
                     continue
 
                 full_img_url = urljoin(url, src)
-                print(f"Found image on {url}: {full_img_url}")
                 image_name = os.path.basename(full_img_url.split("?")[0])
 
                 if full_img_url in downloaded_urls:
@@ -68,7 +67,7 @@ def crawl_and_extract(base_url, output_dir, csv_path, max_images=500):
                 downloaded = "No"
 
                 try:
-                    img_resp = requests.get(full_img_url, timeout=10)
+                    img_resp = requests.get(full_img_url, timeout=30)
                     img_resp.raise_for_status()
                     with open(image_path, 'wb') as f:
                         f.write(img_resp.content)
@@ -104,15 +103,21 @@ def upload_to_dropbox(local_path, dropbox_path):
         print(f"✅ Uploaded to Dropbox: {dropbox_path}")
 
 
-def upload_all_to_dropbox(image_dir, csv_path, subfolder):
+def background_upload(image_dir, csv_path, raw_subfolder):
     try:
-        for image_name in os.listdir(image_dir):
-            img_path = os.path.join(image_dir, image_name)
-            dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{image_name}"
-            upload_to_dropbox(img_path, dropbox_img_path)
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                image_name = row["image_name"]
+                img_path = os.path.join(image_dir, image_name)
+                dropbox_img_path = f"{DROPBOX_BASE_PATH}/{raw_subfolder}/images/{image_name}"
+                if os.path.exists(img_path):
+                    upload_to_dropbox(img_path, dropbox_img_path)
 
-        csv_dropbox_path = f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv"
-        upload_to_dropbox(csv_path, csv_dropbox_path)
+        dropbox_csv_path = f"{DROPBOX_BASE_PATH}/{raw_subfolder}/image_metadata.csv"
+        upload_to_dropbox(csv_path, dropbox_csv_path)
+        print("🎉 Background upload completed.")
+
     except Exception as e:
         print(f"❌ Error in background upload: {e}")
 
@@ -122,8 +127,8 @@ def index():
     message = ""
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        subfolder = request.form.get('dropbox_folder', 'sample1').strip()
-        print(f"📂 Using subfolder name: {subfolder}")
+        raw_subfolder = request.form.get('subfolder', 'sample1').strip()
+        print(f"🟨 Using subfolder name: {raw_subfolder}")
 
         if not parent_url:
             message = "❌ Please enter a valid parent URL."
@@ -135,10 +140,9 @@ def index():
 
                 crawl_and_extract(parent_url, image_dir, csv_path)
 
-                print("🚀 Starting background upload...")
-                threading.Thread(target=upload_all_to_dropbox, args=(image_dir, csv_path, subfolder)).start()
-
-                message = "✅ Extraction completed. Uploading files to Dropbox..."
+                thread = threading.Thread(target=background_upload, args=(image_dir, csv_path, raw_subfolder))
+                thread.start()
+                message = "✅ Extraction started. Uploading in background."
 
     return render_template("index.html", message=message)
 
