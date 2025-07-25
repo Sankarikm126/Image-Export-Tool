@@ -112,7 +112,8 @@ def index():
     message = ""
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        subfolder = request.form.get('dropbox_folder', 'sample1').strip()
+        subfolder = request.form.get('dropbox_folder', 'sample1').strip()  # FIXED KEY
+
         print(f"📂 Using subfolder name: {subfolder}")
 
         if not parent_url:
@@ -125,13 +126,9 @@ def index():
 
                 crawl_and_extract(parent_url, image_dir, csv_path)
 
-                # Launch background upload task
                 print("🚀 Starting background upload...")
                 threading.Thread(target=upload_all_to_dropbox, args=(image_dir, csv_path, subfolder)).start()
 
                 message = "✅ Extraction completed. Uploading files to Dropbox..."
 
     return render_template("index.html", message=message)
-
-if __name__ == '__main__':
-    app.run(debug=True)
