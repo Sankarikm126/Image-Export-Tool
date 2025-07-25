@@ -1,100 +1,62 @@
-from flask import Flask, request, render_template
-import os, requests, csv, tempfile, threading
-from bs4 import BeautifulSoup
+import os
+import csv
+import requests
 from urllib.parse import urljoin, urlparse
-from datetime import datetime
+from bs4 import BeautifulSoup
+from flask import Flask, render_template, request
 import dropbox
-from dotenv import load_dotenv
 
-load_dotenv()
+DROPBOX_TOKEN = os.environ.get("DROPBOX_TOKEN")
 app = Flask(__name__)
-
-DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
-DROPBOX_BASE_PATH = os.environ.get("DROPBOX_MASTER_FOLDER", "/Extracted-Images")
-MAX_IMAGES = 500  # You can increase this if needed
-
 
 def is_internal_link(link, base_url):
     parsed_link = urlparse(link)
-    parsed_base = urlparse(base_url)
-    return parsed_link.netloc == '' or parsed_link.netloc == parsed_base.netloc
+    return not parsed_link.netloc or parsed_link.netloc == urlparse(base_url).netloc
 
+def extract_images_from_url(url, base_url, download_folder, image_data, visited):
+    if url in visited:
+        return
+    visited.add(url)
 
-def crawl_and_extract(base_url, output_dir, csv_path, max_images=MAX_IMAGES):
-    visited = set()
-    downloaded_urls = set()
-    image_data = []
-    queue = [base_url]
-    image_count = 0
+    try:
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.content, "html.parser")
 
-    with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["page_url", "image_url", "image_name", "alt_text_present", "alt_text", "downloaded"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-        while queue:
-            url = queue.pop(0)
-            if url in visited:
+        # Extract and download images
+        for img in soup.find_all("img"):
+            src = img.get("src")
+            alt = img.get("alt") or ""
+            if not src:
                 continue
-            visited.add(url)
+
+            full_url = urljoin(url, src)
+            filename = os.path.basename(urlparse(full_url).path)
+            local_path = os.path.join(download_folder, filename)
 
             try:
-                res = requests.get(url, timeout=30)
-                res.raise_for_status()
-                soup = BeautifulSoup(res.text, "html.parser")
-            except requests.exceptions.RequestException as e:
-                print(f"🚫 Failed to fetch {url}: {e}")
-                continue
-
-            for img in soup.find_all("img"):
-                if image_count >= max_images:
-                    print("🟠 Reached max image limit.")
-                    return image_data
-
-                src = img.get("src")
-                alt = img.get("alt", "")
-
-                if not src or src.startswith("data:image"):
-                    continue
-
-                full_img_url = urljoin(url, src)
-                image_name = os.path.basename(full_img_url.split("?")[0])
-
-                if full_img_url in downloaded_urls:
-                    continue
-
-                image_path = os.path.join(output_dir, image_name)
-                downloaded = "No"
-
-                try:
-                    img_resp = requests.get(full_img_url, timeout=30)
-                    img_resp.raise_for_status()
-                    with open(image_path, 'wb') as f:
-                        f.write(img_resp.content)
-                    downloaded = "Yes"
-                    image_count += 1
-                    downloaded_urls.add(full_img_url)
-                    image_data.append((full_img_url, image_name, alt))
-                    print(f"✅ Downloaded image ({image_count}): {image_name}")
-                except Exception as e:
-                    print(f"❌ Error downloading {full_img_url}: {e}")
-
-                writer.writerow({
-                    "page_url": url,
-                    "image_url": full_img_url,
-                    "image_name": image_name,
+                img_data = requests.get(full_url, timeout=10).content
+                with open(local_path, "wb") as f:
+                    f.write(img_data)
+                print(f"✅ Downloaded image: {filename}")
+                image_data.append({
+                    "source_page": url,
+                    "image_url": full_url,
+                    "filename": filename,
                     "alt_text_present": "Yes" if alt else "No",
                     "alt_text": alt,
-                    "downloaded": downloaded
+                    "downloaded": True
                 })
+            except Exception as e:
+                print(f"❌ Failed to download {full_url}: {e}")
 
-            for a in soup.find_all("a", href=True):
-                link = urljoin(url, a['href'])
-                if is_internal_link(link, base_url) and link.startswith(base_url):
-                    queue.append(link)
+        # Traverse internal links
+        for a in soup.find_all("a", href=True):
+            link = urljoin(url, a['href'])
+            if is_internal_link(link, base_url):
+                extract_images_from_url(link, base_url, download_folder, image_data, visited)
 
-    return image_data
-
+    except Exception as e:
+        print(f"❌ Failed to fetch {url}: {e}")
 
 def upload_to_dropbox(local_path, dropbox_path):
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
@@ -102,50 +64,53 @@ def upload_to_dropbox(local_path, dropbox_path):
         dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
         print(f"✅ Uploaded to Dropbox: {dropbox_path}")
 
-
-def background_upload(image_dir, csv_path, raw_subfolder):
+def background_upload(image_dir, csv_path, dropbox_subfolder):
+    dbx_path_base = f"/Extracted-Images/{dropbox_subfolder}"
     try:
-        with open(csv_path, newline='', encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile)
-            for row in reader:
-                image_name = row["image_name"]
-                img_path = os.path.join(image_dir, image_name)
-                dropbox_img_path = f"{DROPBOX_BASE_PATH}/{raw_subfolder}/images/{image_name}"
-                if os.path.exists(img_path):
-                    upload_to_dropbox(img_path, dropbox_img_path)
-
-        dropbox_csv_path = f"{DROPBOX_BASE_PATH}/{raw_subfolder}/image_metadata.csv"
-        upload_to_dropbox(csv_path, dropbox_csv_path)
-        print("🎉 Background upload completed.")
-
+        for filename in os.listdir(image_dir):
+            local_file = os.path.join(image_dir, filename)
+            dropbox_path = f"{dbx_path_base}/images/{filename}"
+            upload_to_dropbox(local_file, dropbox_path)
+        if csv_path and os.path.exists(csv_path):
+            csv_dropbox_path = f"{dbx_path_base}/image_metadata.csv"
+            upload_to_dropbox(csv_path, csv_dropbox_path)
+        print("✅ All files uploaded successfully.")
     except Exception as e:
-        print(f"❌ Error in background upload: {e}")
-
+        print(f"❌ Error during Dropbox upload: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     message = ""
+
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        raw_subfolder = request.form.get('subfolder', 'sample1').strip()
-        print(f"🟨 Using subfolder name: {raw_subfolder}")
+        raw_subfolder = request.form.get('dropbox_folder', 'sample1')
+        subfolder = raw_subfolder.strip('/').replace('/', '_')
+        image_dir = f"downloads/{subfolder}/images"
+        os.makedirs(image_dir, exist_ok=True)
+        csv_path = f"downloads/{subfolder}/image_metadata.csv"
 
-        if not parent_url:
-            message = "❌ Please enter a valid parent URL."
+        image_data = []
+        visited = set()
+
+        print(f"📥 Starting extraction from: {parent_url}")
+        extract_images_from_url(parent_url, parent_url, image_dir, image_data, visited)
+
+        if image_data:
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ["source_page", "image_url", "filename", "alt_text_present", "alt_text", "downloaded"]
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for data in image_data:
+                    writer.writerow(data)
+            print(f"📝 Metadata CSV written: {csv_path}")
         else:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                image_dir = os.path.join(tmpdir, "images")
-                os.makedirs(image_dir, exist_ok=True)
-                csv_path = os.path.join(tmpdir, "image_metadata.csv")
+            print("⚠️ No image data extracted.")
 
-                crawl_and_extract(parent_url, image_dir, csv_path)
-
-                background_upload(image_dir, csv_path, raw_subfolder)
-                message = "✅ Extraction and upload completed."
-
+        background_upload(image_dir, csv_path, raw_subfolder)
+        message = "✅ Extraction and upload complete."
 
     return render_template("index.html", message=message)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
