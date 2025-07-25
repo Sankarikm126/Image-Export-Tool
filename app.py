@@ -107,14 +107,37 @@ def upload_to_dropbox(local_path, dropbox_path):
     with open(local_path, "rb") as f:
         dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
         print(f"✅ Uploaded to Dropbox: {dropbox_path}")
+        
+def upload_all_to_dropbox(image_dir, csv_path, subfolder):
+    try:
+        print("📤 Starting background upload...")
+
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                image_name = row["image_name"]
+                img_path = os.path.join(image_dir, image_name)
+                dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{image_name}"
+                if os.path.exists(img_path):
+                    upload_to_dropbox(img_path, dropbox_img_path)
+
+        upload_to_dropbox(csv_path, f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv")
+        print("✅ All uploads completed.")
+
+    except Exception as e:
+        print(f"❌ Error in background upload: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     message = ""
+
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        raw_subfolder = request.form.get('dropbox_folder', 'sample1')
-        subfolder = raw_subfolder.strip().strip("/\\")
+        raw_subfolder = request.form.get('subfolder', 'sample1')
+
+        # Clean subfolder path: replace slashes with actual folder hierarchy
+        subfolder = raw_subfolder.strip().replace("\\", "/").strip("/")
+
         print(f"🟨 Using subfolder path: {subfolder}")
 
         if not parent_url:
@@ -125,17 +148,16 @@ def index():
                 os.makedirs(image_dir, exist_ok=True)
                 csv_path = os.path.join(tmpdir, "image_metadata.csv")
 
-                image_data = crawl_and_extract(parent_url, image_dir, csv_path)
+                # Crawl and extract images
+                crawl_and_extract(parent_url, image_dir, csv_path)
 
-                for _, image_name, _ in image_data:
-                    img_path = os.path.join(image_dir, image_name)
-                    dropbox_img_path = f"{DROPBOX_BASE_PATH}/{subfolder}/images/{image_name}"
-                    if os.path.exists(img_path):
-                        upload_to_dropbox(img_path, dropbox_img_path)
-                        time.sleep(0.3)  # throttle to avoid rate limits
+                # Start background thread for upload
+                threading.Thread(
+                    target=upload_all_to_dropbox,
+                    args=(image_dir, csv_path, subfolder)
+                ).start()
 
-                upload_to_dropbox(csv_path, f"{DROPBOX_BASE_PATH}/{subfolder}/image_metadata.csv")
-                message = "✅ Extraction and upload completed. Please check your Dropbox folder."
+                message = "🟢 Extraction completed. Uploading to Dropbox in background."
 
     return render_template("index.html", message=message)
 
