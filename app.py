@@ -10,7 +10,7 @@ load_dotenv()
 app = Flask(__name__)
 DROPBOX_TOKEN = os.environ.get("DROPBOX_ACCESS_TOKEN")
 DROPBOX_BASE_PATH = os.environ.get("DROPBOX_MASTER_FOLDER", "/Extracted-Images")
-MAX_IMAGES = 500
+MAX_IMAGES = 1000
 
 SKIP_KEYWORDS = [
     "logo", "icon", "avatar", "author", "profile", "signature", "favicon",
