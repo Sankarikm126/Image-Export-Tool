@@ -140,9 +140,9 @@ def index():
 
                 crawl_and_extract(parent_url, image_dir, csv_path)
 
-                thread = threading.Thread(target=background_upload, args=(image_dir, csv_path, raw_subfolder))
-                thread.start()
-                message = "✅ Extraction started. Uploading in background."
+                background_upload(image_dir, csv_path, raw_subfolder)
+                message = "✅ Extraction and upload completed."
+
 
     return render_template("index.html", message=message)
 
