@@ -17,7 +17,7 @@ app = Flask(__name__)
 # --- Google Drive setup ---
 SERVICE_ACCOUNT_FILE = 'credentials.json'  # <-- Make sure this file exists
 SCOPES = ['https://www.googleapis.com/auth/drive']
-GOOGLE_DRIVE_PARENT_FOLDER_ID = 'your-google-drive-folder-id'  # <-- Replace this
+GOOGLE_DRIVE_PARENT_FOLDER_ID = '1m677PtYekbqioM6NI-AvElQ9bQ8NqPE-'  # <-- Replace this
 
 creds = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES
