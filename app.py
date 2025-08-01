@@ -5,17 +5,32 @@ import requests
 from urllib.parse import urljoin, urlparse
 from flask import Flask, request, render_template
 from bs4 import BeautifulSoup
-import dropbox
 import threading
 
-DROPBOX_TOKEN = os.environ.get("DROPBOX_TOKEN")
-dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
+# Flask app
 app = Flask(__name__)
 
+# Google Drive setup
+SERVICE_ACCOUNT_FILE = 'credentials.json'
+SCOPES = ['https://www.googleapis.com/auth/drive']
+GOOGLE_DRIVE_FOLDER_ID = 'your-google-drive-folder-id'  # <-- Replace this
+
+creds = service_account.Credentials.from_service_account_file(
+    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+)
+drive_service = build('drive', 'v3', credentials=creds)
+
+
+# Utility: Check if a link is internal
 def is_internal_link(link, base_url):
     return urlparse(link).netloc == urlparse(base_url).netloc
 
+
+# Scrape images from all internal pages
 def scrape_images_from_all_links(base_url):
     visited = set()
     queue = [base_url]
@@ -71,11 +86,23 @@ def scrape_images_from_all_links(base_url):
 
     return image_data, temp_dir
 
-def upload_to_dropbox(local_path, dropbox_path):
-    with open(local_path, "rb") as f:
-        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
-    print(f"✅ Uploaded to Dropbox: {dropbox_path}")
 
+# Upload a single file to Google Drive
+def upload_to_gdrive(local_path, filename, parent_folder_id):
+    file_metadata = {
+        'name': filename,
+        'parents': [parent_folder_id]
+    }
+    media = MediaFileUpload(local_path, resumable=True)
+    uploaded_file = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+    print(f"✅ Uploaded to Google Drive: {filename} (ID: {uploaded_file.get('id')})")
+
+
+# Background upload job
 def background_upload(image_data, raw_subfolder, temp_dir):
     try:
         csv_path = os.path.join(temp_dir, "image_metadata.csv")
@@ -86,22 +113,22 @@ def background_upload(image_data, raw_subfolder, temp_dir):
                 writer.writerow([item["filename"], item["alt"]])
 
         for item in image_data:
-            dropbox_path = os.path.join("/Extracted-Images", raw_subfolder, "images", item["filename"])
-            upload_to_dropbox(item["local_path"], dropbox_path)
+            upload_to_gdrive(item["local_path"], item["filename"], GOOGLE_DRIVE_FOLDER_ID)
 
-        csv_dropbox_path = os.path.join("/Extracted-Images", raw_subfolder, "image_metadata.csv")
-        upload_to_dropbox(csv_path, csv_dropbox_path)
+        upload_to_gdrive(csv_path, "image_metadata.csv", GOOGLE_DRIVE_FOLDER_ID)
 
     except Exception as e:
         print(f"❌ Error in background upload: {e}")
 
+
+# Flask route
 @app.route('/', methods=['GET', 'POST'])
 def index():
     message = ""
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        raw_subfolder = request.form.get('dropbox_folder', 'sample1')
-        print(f"📁 Using subfolder name: {raw_subfolder}")
+        raw_subfolder = request.form.get('dropbox_folder', 'sample1')  # Just a label now
+        print(f"🌐 Starting scrape from: {parent_url}")
 
         try:
             image_data, temp_dir = scrape_images_from_all_links(parent_url)
@@ -111,6 +138,7 @@ def index():
             message = f"❌ Failed to extract: {e}"
 
     return render_template("index.html", message=message)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
