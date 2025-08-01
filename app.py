@@ -11,13 +11,13 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# Flask app
+# --- Flask setup ---
 app = Flask(__name__)
 
-# Google Drive setup
-SERVICE_ACCOUNT_FILE = 'credentials.json'
+# --- Google Drive setup ---
+SERVICE_ACCOUNT_FILE = 'credentials.json'  # <-- Make sure this file exists
 SCOPES = ['https://www.googleapis.com/auth/drive']
-GOOGLE_DRIVE_FOLDER_ID = 'your-google-drive-folder-id'  # <-- Replace this
+GOOGLE_DRIVE_PARENT_FOLDER_ID = 'your-google-drive-folder-id'  # <-- Replace this
 
 creds = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES
@@ -25,12 +25,42 @@ creds = service_account.Credentials.from_service_account_file(
 drive_service = build('drive', 'v3', credentials=creds)
 
 
-# Utility: Check if a link is internal
+# --- Utility: Create a folder in Google Drive ---
+def create_drive_folder(name, parent_id):
+    file_metadata = {
+        'name': name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }
+    folder = drive_service.files().create(
+        body=file_metadata,
+        fields='id'
+    ).execute()
+    print(f"📁 Created Google Drive folder: {name} (ID: {folder.get('id')})")
+    return folder.get('id')
+
+
+# --- Utility: Upload file to a Drive folder ---
+def upload_to_gdrive(local_path, filename, parent_folder_id):
+    file_metadata = {
+        'name': filename,
+        'parents': [parent_folder_id]
+    }
+    media = MediaFileUpload(local_path, resumable=True)
+    uploaded_file = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+    print(f"✅ Uploaded to Google Drive: {filename} (ID: {uploaded_file.get('id')})")
+
+
+# --- Utility: Determine if a link is internal ---
 def is_internal_link(link, base_url):
     return urlparse(link).netloc == urlparse(base_url).netloc
 
 
-# Scrape images from all internal pages
+# --- Scraper: Get all images from internal pages ---
 def scrape_images_from_all_links(base_url):
     visited = set()
     queue = [base_url]
@@ -87,24 +117,13 @@ def scrape_images_from_all_links(base_url):
     return image_data, temp_dir
 
 
-# Upload a single file to Google Drive
-def upload_to_gdrive(local_path, filename, parent_folder_id):
-    file_metadata = {
-        'name': filename,
-        'parents': [parent_folder_id]
-    }
-    media = MediaFileUpload(local_path, resumable=True)
-    uploaded_file = drive_service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id'
-    ).execute()
-    print(f"✅ Uploaded to Google Drive: {filename} (ID: {uploaded_file.get('id')})")
-
-
-# Background upload job
-def background_upload(image_data, raw_subfolder, temp_dir):
+# --- Background uploader ---
+def background_upload(image_data, subfolder_name, temp_dir):
     try:
+        # Create a folder inside the main Google Drive folder
+        subfolder_id = create_drive_folder(subfolder_name, GOOGLE_DRIVE_PARENT_FOLDER_ID)
+
+        # Save image metadata as CSV
         csv_path = os.path.join(temp_dir, "image_metadata.csv")
         with open(csv_path, "w", newline="", encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
@@ -112,28 +131,31 @@ def background_upload(image_data, raw_subfolder, temp_dir):
             for item in image_data:
                 writer.writerow([item["filename"], item["alt"]])
 
+        # Upload images
         for item in image_data:
-            upload_to_gdrive(item["local_path"], item["filename"], GOOGLE_DRIVE_FOLDER_ID)
+            upload_to_gdrive(item["local_path"], item["filename"], subfolder_id)
 
-        upload_to_gdrive(csv_path, "image_metadata.csv", GOOGLE_DRIVE_FOLDER_ID)
+        # Upload CSV
+        upload_to_gdrive(csv_path, "image_metadata.csv", subfolder_id)
 
     except Exception as e:
         print(f"❌ Error in background upload: {e}")
 
 
-# Flask route
+# --- Flask route ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
     message = ""
     if request.method == 'POST':
         parent_url = request.form.get('url')
-        raw_subfolder = request.form.get('dropbox_folder', 'sample1')  # Just a label now
+        folder_name = request.form.get('folder_name', 'ExtractedJob')
         print(f"🌐 Starting scrape from: {parent_url}")
+        print(f"📁 Target Drive folder name: {folder_name}")
 
         try:
             image_data, temp_dir = scrape_images_from_all_links(parent_url)
-            threading.Thread(target=background_upload, args=(image_data, raw_subfolder, temp_dir)).start()
-            message = f"🔄 Extracting {len(image_data)} images and uploading in the background."
+            threading.Thread(target=background_upload, args=(image_data, folder_name, temp_dir)).start()
+            message = f"🔄 Extracting {len(image_data)} images and uploading to Google Drive in the background."
         except Exception as e:
             message = f"❌ Failed to extract: {e}"
 
